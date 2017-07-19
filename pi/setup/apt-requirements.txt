@@ -1,5 +1,5 @@
 ack-grep
-auto-conf
+autoconf
 gcc
 libraspberrypi-bin
 openssh-server
