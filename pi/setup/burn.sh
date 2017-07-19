@@ -26,7 +26,7 @@ then
     fi
 elif [ -n "$(echo $1 | grep -P 'zip$')" ];
 then
-    deflate='unzip -c'
+    deflate='unzip -p'
     size="$(unzip -l $1 | grep 'img$' | awk '{print $1}')"
 elif [ -n "$(echo $1 | grep -P 'img$')" ];
 then
