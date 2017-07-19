@@ -26,8 +26,9 @@ def main():
                 or newer('eclipse-2017-hab-rc', '/etc/init.d/eclipse-2017-hab-rc')
             ),
             (
-                'cp eclipse-2017-hab-rc /etc/init.d/',
-                'update-rc.d eclipse-2017-hab-rc defaults',
+                'sudo cp eclipse-2017-hab-rc /etc/init.d/',
+                'sudo chmod +x /etc/init.d/eclipse-2017-hab-rc',
+                'sudo update-rc.d eclipse-2017-hab-rc defaults',
             )
         ),
         (
