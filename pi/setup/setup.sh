@@ -3,6 +3,8 @@
 # should be safe to run multiple times.
 
 # First, download Raspbian Lite and burn it to an SD card.
+#   wget https://raspbian-lite.somehwere
+#   sudo burn.sh raspbian.tar.gz /dev/mmcblk0
 # Install git and clone the repo:
 #   (root password is raspberry)
 #   apt-get update
