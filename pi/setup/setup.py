@@ -21,10 +21,20 @@ def main():
     section_test_command_tuples = (
         (
             'start up',
-            not exists('/etc/init.d/eclipse-2017-hab-rc') or newer('eclipse-2017-hab-rc', '/etc/init.d/eclipse-2017-hab-rc'),
+            (
+                not exists('/etc/init.d/eclipse-2017-hab-rc')
+                or newer('eclipse-2017-hab-rc', '/etc/init.d/eclipse-2017-hab-rc')
+            ),
             (
                 'cp eclipse-2017-hab-rc /etc/init.d/',
                 'update-rc.d eclipse-2017-hab-rc defaults',
+            )
+        ),
+        (
+            'virtualenv',
+            not exists('/home/pi/.virtualenvs/eclipse-2017-hab'),
+            (
+                'bash setup-virtualenv.sh',
             )
         ),
     )
