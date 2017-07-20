@@ -1,3 +1,7 @@
+pi/images
+pi/temperatures
+pi/videos
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
