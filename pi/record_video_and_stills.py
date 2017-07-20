@@ -1,6 +1,7 @@
 """Records video and still images."""
 import datetime
 import os
+import sys
 import time
 
 import picamera
@@ -42,9 +43,11 @@ def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None)
                 datetime.datetime.now(),
                 '%Y-%m-%d_%H:%M:%S.h264'
             )
-            camera.start_recording(video_file_name, seconds_per_video)
+            camera.start_recording(video_file_name)
+            print('Recording video {}'.format(video_file_name))
 
             video_seconds_elapsed = 0
+            image_count = 1
             while video_seconds_elapsed < seconds_per_video:
                 camera.wait_recording(seconds_between_stills)
                 # TODO: Handle the case where seconds_per_video is not a multiple
@@ -56,7 +59,11 @@ def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None)
                     '%Y-%m-%d_%H:%M:%S.jpg'
                 )
                 camera.capture(image_file_name, use_video_port=True)
+                sys.stdout.write('{} '.format(image_count))
+                sys.stdout.flush()
+                image_count += 1
 
+            print('')
             camera.stop_recording()
 
 
