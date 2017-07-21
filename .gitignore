@@ -1,6 +1,8 @@
 pi/images
 pi/temperatures
 pi/videos
+rtl-sdr/ppm-error.txt
+rtl-sdr/squelch-level.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
