@@ -1,6 +1,8 @@
 """Records video and still images."""
+from __future__ import print_function
 import datetime
 import os
+import subprocess
 import sys
 import time
 
@@ -63,8 +65,28 @@ def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None)
                 sys.stdout.flush()
                 image_count += 1
 
+                try:
+                    mibibytes_free = get_free_mibibytes()
+                    if mibibytes_free < 100:
+                        print('{} mibibytes free, stopping video')
+                        camera.stop_recording()
+                        return
+                except Exception as exc:
+                    print('Error finding free disk space: {}'.format(exc))
+
             print('')
             camera.stop_recording()
+
+
+def get_free_mibibytes():
+    """Returns the number of free mibibytes on /."""
+    df_output = subprocess.check_output(('df', '--output=avail', '/', '--block-size=M'))
+    last_line = df_output.split('\n')[1]
+    if last_line.endswith('M'):
+        mibibytes_free = int(last_line[:-1])
+    else:  # This shouldn't happen, but, maybe try just parsing a number
+        mibibytes_free = int(last_line)
+    return mibibytes_free
 
 
 def main():
