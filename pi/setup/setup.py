@@ -38,6 +38,14 @@ def main():
                 'bash setup-virtualenv.sh',
             )
         ),
+        (
+            'SSH banner',
+            not exists('/etc/banner'),
+            (
+                'sudo cp banner /etc',
+                'sudo bash add-banner-to-sshd.sh',
+            )
+        ),
     )
 
     for section, test, commands in section_test_command_tuples:
