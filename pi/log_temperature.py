@@ -19,7 +19,7 @@ def log_temperature(delay_seconds=None, swap_file_seconds=None):
         raise ValueError('Invalid delay_seconds ')
 
     if swap_file_seconds is None:
-        swap_file_seconds = 60 * 5
+        swap_file_seconds = 60 * 15
     elif swap_file_seconds < 60:
         raise ValueError('Invalid swap_file_seconds')
 
