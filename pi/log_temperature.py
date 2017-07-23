@@ -38,6 +38,9 @@ def log_temperature(delay_seconds=None, swap_file_seconds=None):
                     datetime.datetime.now(),
                     '%Y-%m-%d %H:%M:%S'
                 )
+                message = '"{}",{}\n'.format(time_stamp, temperature_c)
+                sys.stdout.write(message)
+                sys.stdout.flush()
                 temperature_file.write('"{}",{}\n'.format(time_stamp, temperature_c))
                 temperature_file.flush()
                 time.sleep(delay_seconds)
