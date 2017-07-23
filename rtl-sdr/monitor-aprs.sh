@@ -15,5 +15,11 @@ fi
 
 rtl_fm_command="rtl_fm -f 144.390M -s 22050 -l ${squelch_level} -p ${ppm_error} -"
 multimon_command='multimon-ng -A -t raw -'
-echo "$rtl_fm_command | $multimon_command"
-$rtl_fm_command | $multimon_command
+if [ -z "$(which pv)" ];
+then
+	pv_command='cat'
+else
+	pv_command='pv'
+fi
+echo "${rtl_fm_command} | ${pv_command} | ${multimon_command}"
+${rtl_fm_command} | ${pv_command} | ${multimon_command}

@@ -15,5 +15,11 @@ fi
 
 rtl_fm_command="rtl_fm -f 144.390M -s 22050 -l ${squelch_level} -p ${ppm_error} -"
 play_command='play -r 24k -t raw -e s -b 16 -c 1 -V1 -'
-echo "${rtl_fm_command} | ${play_command}"
-${rtl_fm_command} | ${play_command}
+if [ -z "$(which pv)" ];
+then
+	pv_command='cat'
+else
+	pv_command='pv'
+fi
+echo "${rtl_fm_command} | ${pv_command} | ${play_command}"
+${rtl_fm_command} | ${pv_command} | ${play_command}
