@@ -33,7 +33,7 @@ temp_dir="$(mktemp -d)"
 cd "${temp_dir}"
 
 echo 'Installing rtl-sdr'
-apt install git build-essential cmake libusb-1.0-0-dev
+apt install -y git build-essential cmake libusb-1.0-0-dev
 git clone git://git.osmocom.org/rtl-sdr.git
 cd rtl-sdr
 mkdir build
@@ -44,14 +44,14 @@ make install
 ldconfig
 
 echo 'Installing sox'
-apt install sox
+apt install -y sox
 
 echo 'Installing Kalibrate'
 cd "${temp_dir}"
-apt install libtool autoconf automake libfftw3-dev
+apt install -y libtool autoconf automake libfftw3-dev
 git clone https://github.com/asdil12/kalibrate-rtl.git
 cd kalibrate-rtl
-if [ "$(uname -m)" == 'armv7l'] ;
+if [ "$(uname -m)" == 'armv7l' ] ;
 then
 	git checkout arm_memory
 elif [ "$(uname -m)" == 'x86_64' -o "$(uname -m)" == 'x86' -o "$(uname -m)" == 'x86_32' ];
@@ -67,7 +67,7 @@ make install
 
 echo 'Installing Multimon-NG decoder'
 cd "${temp_dir}"
-apt install qt4-qmake libpulse-dev libx11-dev
+apt install -y qt4-qmake libpulse-dev libx11-dev
 git clone https://github.com/EliasOenal/multimonNG.git
 cd multimonNG
 mkdir build
