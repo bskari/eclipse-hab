@@ -67,7 +67,7 @@ make install
 
 echo 'Installing Multimon-NG decoder'
 cd "${temp_dir}"
-apt install -y qt4-qmake libpulse-dev libx11-dev
+apt install -y qt4-qmake qt4-default libpulse-dev libx11-dev
 git clone https://github.com/EliasOenal/multimonNG.git
 cd multimonNG
 mkdir build
