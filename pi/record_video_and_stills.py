@@ -68,7 +68,7 @@ def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None)
                 try:
                     mibibytes_free = get_free_mibibytes()
                     if mibibytes_free < 100:
-                        print('{} mibibytes free, stopping video')
+                        print('{} mibibytes free, stopping video'.format(mibibytes_free))
                         camera.stop_recording()
                         return
                 except Exception as exc:
@@ -81,7 +81,12 @@ def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None)
 def get_free_mibibytes():
     """Returns the number of free mibibytes on /."""
     df_output = subprocess.check_output(('df', '--output=avail', '/', '--block-size=M'))
-    last_line = df_output.split('\n')[1]
+
+    # Python 3 support
+    if isinstance(df_output, bytes):
+        df_output = df_output.decode()
+
+    last_line = df_output.decode().split('\n')[1]
     if last_line.endswith('M'):
         mibibytes_free = int(last_line[:-1])
     else:  # This shouldn't happen, but, maybe try just parsing a number
