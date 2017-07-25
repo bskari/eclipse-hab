@@ -21,22 +21,28 @@ then
     exit 1
 fi
 
-apt-get update -y
-if [ ! -f 'raspi-config_20160527_all.deb' ];
+raspi_config_file="$(wget http://archive.raspberrypi.org/debian/pool/main/r/raspi-config/ -O - | grep -o '>raspi-config.*deb<' | grep -o 'raspi-config.*deb' | sort -n | tail -n 1)"
+if [ -z "${raspi_config_file}" ] ;
 then
-    wget http://archive.raspberrypi.org/debian/pool/main/r/raspi-config/raspi-config_20170705_all.deb
-    dpkg -i raspi-config_20170705_all.deb
+    echo 'Unable to find latest version of raspi-config, skipping'
+else
+    if [ ! -f "${raspi_config_file}" ] ;
+    then
+        wget "http://archive.raspberrypi.org/debian/pool/main/r/raspi-config/${raspi_config_file}"
+        dpkg -i "${raspi_config_file}"
+    fi
+    echo 'Get ready to expand the root FS, change keyboard/locale/WiFi to US, enable SSH, and enable the camera (press enter)'
+    read
+    raspi-config  # Expand the root FS, enable the camera
 fi
-echo 'Get ready to expand the root FS and enable the camera (press enter)'
-read
-raspi-config  # Expand the root FS, enable the camera
 
 echo -n 'Want to update the firmware? (y/n) '
 read firmware
 if [ "${firmware}" == 'y' ];
 then
-    apt-get install curl  # Curl is needed for the rpi-update script
-    apt-get install binutils # readelf is needed for the rpi-update script
+    apt-get update
+    apt-get install -y curl  # Curl is needed for the rpi-update script
+    apt-get install -y binutils # readelf is needed for the rpi-update script
     curl https://raw.githubusercontent.com/Hexxeh/rpi-update/master/rpi-update > /usr/bin/rpi-update
     chmod +x /usr/bin/rpi-update
     rpi-update
@@ -56,7 +62,8 @@ pushd ~pi
     fi
 popd
 
-apt-get upgrade
+apt-get update
+apt-get -y upgrade
 
 apt-get install -y $(cat apt-requirements.txt)
 
