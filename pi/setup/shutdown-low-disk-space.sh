@@ -3,7 +3,7 @@
 while :;  # Loop forever
 do
 	free_mibibytes="$(df --output=avail --block-size=M / | grep -P '\d+' | sed 's/M//')"
-	echo "${free_mibibytes} free MiB"
+	echo "$(date) ${free_mibibytes} free MiB"
 	if [ "${free_mibibytes}" -lt 100 ] ;
 	then
 		echo 'Shutting down'
