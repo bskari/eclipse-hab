@@ -7,6 +7,7 @@ do
 	if [ "${free_mibibytes}" -lt 100 ] ;
 	then
 		echo 'Shutting down'
+		echo "$(date +'%Y-%m-%d_%H:%M:%S')" > shutdown-time.txt
 		sudo shutdown -h -t 15 +1
 	fi
 
