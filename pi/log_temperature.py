@@ -1,26 +1,63 @@
 """Logs the internal temperature."""
-from __future__ import print_function
-
 import datetime
+import logging
 import os
 import sys
 import time
 
 
-def log_temperature(delay_seconds=None, swap_file_seconds=None):
+def main():
+    """Main."""
+    logger = logging.Logger('temperature')
+    formatter = logging.Formatter(
+        '%(asctime)s:%(levelname)s %(message)s'
+    )
+
+    file_handler = logging.FileHandler('temperature.log')
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_handler.setLevel(logging.DEBUG)
+    logger.addHandler(stdout_handler)
+
+    if len(sys.argv) > 2:
+        swap_file_seconds = int(sys.argv[1])
+    else:
+        swap_file_seconds = 60 * 15
+
+    if len(sys.argv) > 1:
+        delay_seconds = int(sys.argv[0])
+    else:
+        delay_seconds = 10
+
+    try:
+        log_temperature(delay_seconds, swap_file_seconds)
+    except Exception as exc:
+        logger.error(exc)
+
+
+def log_temperature(delay_seconds, swap_file_seconds):
     """Logs the internal temperature."""
+    logger = logging.Logger('temperature')
+
+    logger.info(
+        'delay_seconds: {}, swap_file_seconds: {}'.format(
+            delay_seconds,
+            swap_file_seconds
+        )
+    )
+
     temperature_path = 'temperatures'
     if not os.path.isdir(temperature_path):
         os.mkdir(temperature_path)
 
-    if delay_seconds is None:
-        delay_seconds = 10
-    elif delay_seconds < 1:
+    if delay_seconds < 1:
         raise ValueError('Invalid delay_seconds ')
 
-    if swap_file_seconds is None:
-        swap_file_seconds = 60 * 15
-    elif swap_file_seconds < 60:
+    if swap_file_seconds < 60:
         raise ValueError('Invalid swap_file_seconds')
 
     while True:
@@ -29,10 +66,12 @@ def log_temperature(delay_seconds=None, swap_file_seconds=None):
             datetime.datetime.now(),
             '%Y-%m-%d_%H:%M:%S.csv'
         )
+        logger.debug('Opening {}'.format(temperature_file_name))
         with open(temperature_file_name, 'w') as temperature_file:
             while seconds < swap_file_seconds:
                 with open('/sys/class/thermal/thermal_zone0/temp', 'r') as thermal_zone_file:
                     temperature_c = float(thermal_zone_file.read()) * 1e-3
+                logger.debug('{} C'.format(temperature_c))
 
                 time_stamp = datetime.datetime.strftime(
                     datetime.datetime.now(),
@@ -48,9 +87,4 @@ def log_temperature(delay_seconds=None, swap_file_seconds=None):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 2:
-        log_temperature(int(sys.argv[0]), int(sys.argv[1]))
-    elif len(sys.argv) > 1:
-        log_temperature(int(sys.argv[0]))
-    else:
-        log_temperature()
+    main()

@@ -1,5 +1,4 @@
 """Records video and still images."""
-from __future__ import print_function
 import datetime
 import os
 import subprocess
@@ -9,22 +8,20 @@ import time
 import picamera
 
 
-def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None):
+def record_video_and_stills(seconds_per_video, seconds_between_stills):
     """Records video in chunks and still images until space runs out or another
     error occurs.
 
     Warning: the seconds calculation will be off if seconds_per_video is not a
     multiple of seconds_between_stills.
     """
-    if seconds_per_video is None:
-        seconds_per_video = 5 * 60
-    elif seconds_per_video < 15:
+    if seconds_per_video < 15:
         raise ValueError('Invalid seconds_per_video')
 
-    if seconds_between_stills is None:
-        seconds_between_stills = 5
-    elif seconds_between_stills < 1:
+    if seconds_between_stills < 1:
         raise ValueError('Invalid seconds_between_stills')
+
+    logger = logging.Logger('temperature')
 
     video_path = 'videos'
     image_path = 'images'
@@ -45,8 +42,8 @@ def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None)
                 datetime.datetime.now(),
                 '%Y-%m-%d_%H:%M:%S.h264'
             )
+            logger.info('Saving {}'.format(video_file_name))
             camera.start_recording(video_file_name)
-            print('Recording video {}'.format(video_file_name))
 
             video_seconds_elapsed = 0
             image_count = 1
@@ -68,13 +65,12 @@ def record_video_and_stills(seconds_per_video=None, seconds_between_stills=None)
                 try:
                     mibibytes_free = get_free_mibibytes()
                     if mibibytes_free < 100:
-                        print('{} mibibytes free, stopping video'.format(mibibytes_free))
+                        logger.info('{} mibibytes free, stopping video'.format(mibibytes_free))
                         camera.stop_recording()
                         return
                 except Exception as exc:
-                    print('Error finding free disk space: {}'.format(exc))
+                    logger.error('Error finding free disk space: {}'.format(exc))
 
-            print('')
             camera.stop_recording()
 
 
@@ -96,7 +92,35 @@ def get_free_mibibytes():
 
 def main():
     """Main."""
-    record_video_and_stills()
+    logger = logging.Logger('temperature')
+    formatter = logging.Formatter(
+        '%(asctime)s:%(levelname)s %(message)s'
+    )
+
+    file_handler = logging.FileHandler('temperature.log')
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_handler.setLevel(logging.DEBUG)
+    logger.addHandler(stdout_handler)
+
+    if len(sys.argv) > 2:
+        seconds_between_stills = int(sys.argv[1])
+    else:
+        seconds_between_stills = 5
+
+    if len(sys.argv) > 1:
+        seconds_per_video = int(sys.argv[0])
+    else:
+        seconds_per_video = 5 * 60
+
+    try:
+        record_video_and_stills(seconds_per_video, seconds_between_stills)
+    except Exception as exc:
+        logger.error(exc)
 
 
 if __name__ == '__main__':
