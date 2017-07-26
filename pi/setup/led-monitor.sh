@@ -40,6 +40,8 @@ function good {
 }
 
 function set_led {
+	# Sets the LED brightness. Apparently the Pi Zero W is wired with inverse
+	# logic: > 0 is off, 0 is on.
 	led='/sys/class/leds/led0/brightness'
 	if [ -f "${led}" ] ;
 	then
@@ -49,7 +51,7 @@ function set_led {
 	fi
 }
 
-set_led 0
+set_led 1
 
 now_seconds="$(date +%s)"
 end_time="$(expr 600 + ${now_seconds})"
@@ -66,14 +68,14 @@ do
 		for i in $(seq 1 ${status}) ;
 		do
 			sleep 0.25
-			set_led 1
-			sleep 0.25
 			set_led 0
+			sleep 0.25
+			set_led 1
 		done
 	else
-		set_led 1
-		sleep 1
 		set_led 0
+		sleep 1
+		set_led 1
 	fi
 
 	sleep 5
