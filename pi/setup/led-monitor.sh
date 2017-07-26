@@ -8,14 +8,31 @@ then
 	echo none | sudo tee "${trigger}"
 fi
 
+function process_grep {
+	# If you run:
+	#   python foo.py
+	# then `pgrep foo.py` will return 1, because it only picks up 'python'
+	# This function searches the whole process space.
+	ps -ef | grep -v grep | grep -q $1
+	return $?
+}
+# Just a check
+process_grep $0
+if [ $? -ne 0 ] ;
+then
+	echo 'Error'
+	exit 1
+fi
+
 function good {
 	status=0
 	multiplier=1
 
 	for process in shutdown-low-disk-space log_temperature record_video_and_stills ;
 	do
-		pgrep "${process}"
-		status="$(expr ${status} + $? '*' ${multiplier})"
+		process_grep "${process}"
+		result=$?
+		status="$(expr ${status} + ${result} '*' ${multiplier})"
 		multiplier="$(expr ${multiplier} '*' 2)"
 	done
 
@@ -26,7 +43,7 @@ function set_led {
 	led='/sys/class/leds/led0/brightness'
 	if [ -f "${led}" ] ;
 	then
-		echo $1 | sudo tee /sys/class/leds/led0/brightness
+		echo $1 | sudo tee "${led}"
 	else
 		echo "set_led $1"
 	fi
@@ -65,5 +82,5 @@ done
 # Reenable the disk activity trigger
 if [ -f "${trigger}" ] ;
 then
-	echo mmc0 | sudo tee /sys/class/leds/led0/trigger
+	echo mmc0 | sudo tee "${trigger}"
 fi
