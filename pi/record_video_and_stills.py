@@ -1,5 +1,6 @@
 """Records video and still images."""
 import datetime
+import logging
 import os
 import subprocess
 import sys
