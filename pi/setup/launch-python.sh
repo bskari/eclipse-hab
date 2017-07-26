@@ -29,6 +29,13 @@ function main() {
 	tmux new-window -t eclipse-2017-hab
 	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
 	tmux send-keys -t eclipse-2017-hab 'bash setup/shutdown-low-disk-space.sh' c-m
+	wait_for_process 'shutdown-low-disk-space.sh'
+
+	# Launch the watchdog that blinks the LED to indicate status. This needs to be
+	# done last, because it checks for all of the above processes.
+	tmux new-window -t eclipse-2017-hab
+	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
+	tmux send-keys -t eclipse-2017-hab 'bash setup/led-monitor.sh' c-m
 }
 
 
