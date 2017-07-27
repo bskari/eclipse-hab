@@ -43,6 +43,15 @@ function set_led {
 	# Sets the LED brightness. Apparently the Pi Zero W is wired with inverse
 	# logic: > 0 is off, 0 is on.
 	led='/sys/class/leds/led0/brightness'
+
+	# Disable the disk activity trigger... Something keeps reenabling this, so just
+	# keep disabling it
+	trigger='/sys/class/leds/led0/trigger'
+	if [ -f "${trigger}" ] ;
+	then
+		echo none | sudo tee "${trigger}"
+	fi
+
 	if [ -f "${led}" ] ;
 	then
 		echo $1 | sudo tee "${led}"
