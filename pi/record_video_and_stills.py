@@ -22,7 +22,7 @@ def record_video_and_stills(seconds_per_video, seconds_between_stills):
     if seconds_between_stills < 1:
         raise ValueError('Invalid seconds_between_stills')
 
-    logger = logging.Logger('temperature')
+    logger = logging.getLogger('temperature')
 
     video_path = 'videos'
     image_path = 'images'
@@ -83,7 +83,7 @@ def get_free_mibibytes():
     if isinstance(df_output, bytes):
         df_output = df_output.decode()
 
-    last_line = df_output.decode().split('\n')[1]
+    last_line = df_output.split('\n')[1]
     if last_line.endswith('M'):
         mibibytes_free = int(last_line[:-1])
     else:  # This shouldn't happen, but, maybe try just parsing a number
@@ -93,7 +93,7 @@ def get_free_mibibytes():
 
 def main():
     """Main."""
-    logger = logging.Logger('temperature')
+    logger = logging.getLogger('temperature')
     formatter = logging.Formatter(
         '%(asctime)s:%(levelname)s %(message)s'
     )

@@ -8,7 +8,7 @@ import time
 
 def main():
     """Main."""
-    logger = logging.Logger('temperature')
+    logger = logging.getLogger('temperature')
     formatter = logging.Formatter(
         '%(asctime)s:%(levelname)s %(message)s'
     )
@@ -41,7 +41,7 @@ def main():
 
 def log_temperature(delay_seconds, swap_file_seconds):
     """Logs the internal temperature."""
-    logger = logging.Logger('temperature')
+    logger = logging.getLogger('temperature')
 
     logger.info(
         'delay_seconds: {}, swap_file_seconds: {}'.format(
