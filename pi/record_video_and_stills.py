@@ -22,7 +22,7 @@ def record_video_and_stills(seconds_per_video, seconds_between_stills):
     if seconds_between_stills < 1:
         raise ValueError('Invalid seconds_between_stills')
 
-    logger = logging.getLogger('temperature')
+    logger = logging.getLogger('video')
 
     video_path = 'videos'
     image_path = 'images'
@@ -93,12 +93,12 @@ def get_free_mibibytes():
 
 def main():
     """Main."""
-    logger = logging.getLogger('temperature')
+    logger = logging.getLogger('video')
     formatter = logging.Formatter(
         '%(asctime)s:%(levelname)s %(message)s'
     )
 
-    file_handler = logging.FileHandler('temperature.log')
+    file_handler = logging.FileHandler('video.log')
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.INFO)
     logger.addHandler(file_handler)
