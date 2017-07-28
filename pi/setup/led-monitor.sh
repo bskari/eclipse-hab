@@ -28,7 +28,7 @@ function good {
 	status=0
 	multiplier=2
 
-	for process in shutdown-low-disk-space log_temperature record_video_and_stills ;
+	for process in log_temperature record_video_and_stills ;
 	do
 		process_grep "${process}"
 		result=$?
