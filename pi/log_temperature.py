@@ -44,10 +44,9 @@ def log_temperature(delay_seconds, swap_file_seconds):
     logger = logging.getLogger('temperature')
 
     logger.info(
-        'delay_seconds: {}, swap_file_seconds: {}'.format(
-            delay_seconds,
-            swap_file_seconds
-        )
+        'delay_seconds: %d, swap_file_seconds: %d',
+        delay_seconds,
+        swap_file_seconds
     )
 
     temperature_path = 'temperatures'
@@ -66,12 +65,12 @@ def log_temperature(delay_seconds, swap_file_seconds):
             datetime.datetime.now(),
             '%Y-%m-%d_%H:%M:%S.csv'
         )
-        logger.debug('Opening {}'.format(temperature_file_name))
+        logger.debug('Opening %s', temperature_file_name)
         with open(temperature_file_name, 'w') as temperature_file:
             while seconds < swap_file_seconds:
                 with open('/sys/class/thermal/thermal_zone0/temp', 'r') as thermal_zone_file:
                     temperature_c = float(thermal_zone_file.read()) * 1e-3
-                logger.debug('{} C'.format(temperature_c))
+                logger.debug('%.2f C', temperature_c)
 
                 time_stamp = datetime.datetime.strftime(
                     datetime.datetime.now(),
