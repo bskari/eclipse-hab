@@ -15,6 +15,10 @@ function main() {
 	tmux send-keys -t eclipse-2017-hab "source ${virtualenvwrapper}" c-m
 	tmux send-keys -t eclipse-2017-hab 'workon eclipse-2017-hab' c-m
 	tmux send-keys -t eclipse-2017-hab 'python record_video_and_stills.py' c-m
+	# record_videos_and_stills.py monitors for low disk space, so when it exits,
+	# it's time to shut down
+	tmux send-keys -t eclipse-2017-hab 'python log_temperature.py' c-m
+	tmux send-keys -t eclipse-2017-hab 'shutdown -h +1' c-m
 	wait_for_process 'record_video_and_stills.py'
 
 	# Launch the temperature recording
@@ -24,12 +28,6 @@ function main() {
 	tmux send-keys -t eclipse-2017-hab 'workon eclipse-2017-hab' c-m
 	tmux send-keys -t eclipse-2017-hab 'python log_temperature.py' c-m
 	wait_for_process 'log_temperature.py'
-
-	# Shutdown cleanly when we're low on space
-	tmux new-window -t eclipse-2017-hab
-	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
-	tmux send-keys -t eclipse-2017-hab 'bash setup/shutdown-low-disk-space.sh' c-m
-	wait_for_process 'shutdown-low-disk-space.sh'
 
 	# Launch the watchdog that blinks the LED to indicate status. This needs to be
 	# done last, because it checks for all of the above processes.
@@ -84,8 +82,6 @@ function set_globals() {
 	done
 	abort_if_not_set 'virtualenvwrapper'
 }
-
-
 
 
 main

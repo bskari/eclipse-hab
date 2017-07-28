@@ -2,7 +2,6 @@
 import datetime
 import logging
 import os
-import subprocess
 import sys
 import time
 
@@ -31,6 +30,7 @@ def record_video_and_stills(seconds_per_video, seconds_between_stills):
     if not os.path.isdir(image_path):
         os.mkdir(image_path)
 
+    last_video_file_size_mib = 100
     with picamera.PiCamera() as camera:
         camera.resolution = (1920, 1080)
         camera.start_preview()
@@ -43,7 +43,7 @@ def record_video_and_stills(seconds_per_video, seconds_between_stills):
                 datetime.datetime.now(),
                 '%Y-%m-%d_%H:%M:%S.h264'
             )
-            logger.info('Saving {}'.format(video_file_name))
+            logger.info('Saving %s', video_file_name)
             camera.start_recording(video_file_name)
 
             video_seconds_elapsed = 0
@@ -65,29 +65,24 @@ def record_video_and_stills(seconds_per_video, seconds_between_stills):
 
                 try:
                     mibibytes_free = get_free_mibibytes()
-                    if mibibytes_free < 100:
-                        logger.info('{} mibibytes free, stopping video'.format(mibibytes_free))
+                    if mibibytes_free < last_video_file_size_mib:
+                        logger.info('%d mibibytes free, stopping video', mibibytes_free)
                         camera.stop_recording()
                         return
                 except Exception as exc:
-                    logger.error('Error finding free disk space: {}'.format(exc))
+                    logger.error('Error finding free disk space: %s', exc)
 
             camera.stop_recording()
+            last_video_file_size_mib = max(
+                os.stat(video_file_name).st_size // (1024 ** 2),
+                100
+            )
 
 
 def get_free_mibibytes():
     """Returns the number of free mibibytes on /."""
-    df_output = subprocess.check_output(('df', '--output=avail', '/', '--block-size=M'))
-
-    # Python 3 support
-    if isinstance(df_output, bytes):
-        df_output = df_output.decode()
-
-    last_line = df_output.split('\n')[1]
-    if last_line.endswith('M'):
-        mibibytes_free = int(last_line[:-1])
-    else:  # This shouldn't happen, but, maybe try just parsing a number
-        mibibytes_free = int(last_line)
+    stat_result = os.statvfs('/')
+    mibibytes_free = stat_result.f_bavail * stat_result.f_bsize // (1024 ** 2)
     return mibibytes_free
 
 
