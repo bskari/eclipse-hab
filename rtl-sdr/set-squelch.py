@@ -45,14 +45,15 @@ def find_squelch_level():
     """Finds the squelch level."""
 
     # Binary search up!
-    upper_limit = 10
+    upper_limit = 20
     for i in range(10):
         print('Trying {}'.format(upper_limit))
         bytes_count = bytes_at_squelch_level(upper_limit)
         print('Squelch level {} produced {} bytes'.format(upper_limit, bytes_count))
         if bytes_count < 10000:
             break
-        upper_limit *= 2
+        time.sleep(1)
+        upper_limit = int(upper_limit * 1.5)
 
     return upper_limit
 
