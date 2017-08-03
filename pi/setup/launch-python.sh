@@ -17,7 +17,6 @@ function main() {
 	tmux send-keys -t eclipse-2017-hab 'python record_video_and_stills.py' c-m
 	# record_videos_and_stills.py monitors for low disk space, so when it exits,
 	# it's time to shut down
-	tmux send-keys -t eclipse-2017-hab 'python log_temperature.py' c-m
 	tmux send-keys -t eclipse-2017-hab 'shutdown -h +1' c-m
 	wait_for_process 'record_video_and_stills.py'
 
@@ -28,6 +27,14 @@ function main() {
 	tmux send-keys -t eclipse-2017-hab 'workon eclipse-2017-hab' c-m
 	tmux send-keys -t eclipse-2017-hab 'python log_temperature.py' c-m
 	wait_for_process 'log_temperature.py'
+
+	# Launch the serial dumper
+	tmux new-window -t eclipse-2017-hab
+	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
+	tmux send-keys -t eclipse-2017-hab "source ${virtualenvwrapper}" c-m
+	tmux send-keys -t eclipse-2017-hab 'workon eclipse-2017-hab' c-m
+	tmux send-keys -t eclipse-2017-hab 'python dump_serial.py' c-m
+	wait_for_process 'dump_serial.py'
 
 	# Launch the watchdog that blinks the LED to indicate status. This needs to be
 	# done last, because it checks for all of the above processes.

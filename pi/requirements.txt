@@ -1,1 +1,2 @@
 picamera >= 1.13
+pyserial >= 3.3
