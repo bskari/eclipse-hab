@@ -23,8 +23,8 @@ def main():
         raise ValueError('No serial ports found')
     # TODO: Pick the correct port if there are more than one
     port_name, _, _ = ports[0]
-    logger.info('Reading from %s', port_name)
     logger.setLevel(logging.DEBUG)
+    logger.info('Found %d ports, reading from %s', len(ports), port_name)
     dump_serial(port_name, logger)
 
 
@@ -59,6 +59,21 @@ def dump_serial(port_name, logger, seconds_between_timestamps=None):
 
             now = datetime.datetime.now()
             if (now - last_timestamp).seconds > seconds_between_timestamps:
+                # Grab the rest of the bytes so that we don't cut anything off
+                previous_timeout = serial_.timeout
+                # At 9600 baud, we should see... 1200 chars per second? so 0.01
+                # seconds should be enough to wait if there are data coming
+                # through
+                serial_.timeout = 0.01
+                data = b'1'
+                while len(data) > 0:
+                    data = serial_.read(256)
+                    bytes_read_count += len(data)
+                    if len(data) > 0:
+                        logger.debug(data)
+                    serial_file.write(data)
+                serial_.timeout = previous_timeout
+
                 time_stamp = datetime.datetime.strftime(now, '%Y-%m-%d %H:%M:%S')
 
                 serial_file.write('\n{}\n'.format(time_stamp).encode())
