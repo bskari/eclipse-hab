@@ -17,7 +17,7 @@ function main() {
 	tmux send-keys -t eclipse-2017-hab 'python record_video_and_stills.py' c-m
 	# record_videos_and_stills.py monitors for low disk space, so when it exits,
 	# it's time to shut down
-	tmux send-keys -t eclipse-2017-hab 'shutdown -h +1' c-m
+	tmux send-keys -t eclipse-2017-hab 'bash setup/shutdown.sh' c-m
 	wait_for_process 'record_video_and_stills.py'
 
 	# Launch the temperature recording
