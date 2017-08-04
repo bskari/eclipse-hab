@@ -3,7 +3,9 @@
 uptime_seconds="$(cut -d '.' -f 1 /proc/uptime)"
 if [ "${uptime_seconds}" -lt 300 ] ;
 then
-	sudo shutdown -h +5
-else
-	sudo shutdown -h +1
+	# Sleep, because shutdown blocks new logins from SSH within 5 minutes of
+	# shutdown, which is annoying
+	sudo shutdown -k +5
+	sleep 240
 fi
+sudo shutdown -h +1
