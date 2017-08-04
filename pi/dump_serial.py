@@ -1,4 +1,5 @@
 import datetime
+import os
 import serial
 import serial.tools.list_ports
 import sys
@@ -23,6 +24,7 @@ def main():
     # TODO: Pick the correct port if there are more than one
     port_name, _, _ = ports[0]
     logger.info('Reading from %s', port_name)
+    logger.setLevel(logging.DEBUG)
     dump_serial(port_name, logger)
 
 
@@ -49,7 +51,7 @@ def dump_serial(port_name, logger, seconds_between_timestamps=None):
         bytes_read_count = 0
 
         while True:
-            data = serial.read(256)
+            data = serial_.read(256)
             bytes_read_count += len(data)
             if len(data) > 0:
                 logger.debug(data)
