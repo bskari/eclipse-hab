@@ -46,6 +46,16 @@ def main():
                 'sudo bash add-banner-to-sshd.sh',
             )
         ),
+        (
+            'network interfaces',
+            (
+                not exists('/etc/network/interfaces')
+                or newer('interfaces', '/etc/network/interfaces')
+            ),
+            (
+                'sudo cp interfaces /etc/network/interfaces',
+            )
+        ),
     )
 
     for section, test, commands in section_test_command_tuples:
