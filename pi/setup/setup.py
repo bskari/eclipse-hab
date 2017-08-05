@@ -71,7 +71,7 @@ def main():
             'disable HDMI',
             not grep('/etc/rc.local', 'tvservice'),
             (
-                'sudo bash append.sh /etc/rc.local /usr/bin/tvservice -o',
+                ('sudo', 'sed', '-i', 's/^exit 0$/\/usr\/bin\/tvservice -o\nexit 0/', '/etc/rc.local'),
             )
         ),
         (
@@ -95,7 +95,12 @@ def main():
             print('+++ Running section {section}'.format(section=section))
             for command in commands:
                 print(command)
-                return_code = subprocess.call(command.split(' '))
+                if isinstance(command, str):
+                    return_code = subprocess.call(command.split(' '))
+                else:
+                    # Already split
+                    return_code = subprocess.call(command)
+
                 if return_code != 0:
                     print(
                         'Command failed with code {code}, aborting'.format(
