@@ -50,6 +50,13 @@ def main():
             )
         ),
         (
+            'virtualenv requirements',
+            True,  # There's no harm in always updating the requirements
+            (
+                'sudo -u pi bash setup-virtualenv-2.sh',
+            )
+        ),
+        (
             'SSH banner',
             not exists('/etc/banner'),
             (
