@@ -71,7 +71,7 @@ def main():
             'disable HDMI',
             not grep('/etc/rc.local', 'tvservice'),
             (
-                ('sudo', 'sed', '-i', 's/^exit 0$/\/usr\/bin\/tvservice -o\nexit 0/', '/etc/rc.local'),
+                ('sudo', 'sed', '-i', 's/^exit 0$/\\/usr\\/bin\\/tvservice -o\\nexit 0/', '/etc/rc.local'),
             )
         ),
         (
