@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 import os
+import re
 import subprocess
 import sys
 
@@ -17,6 +18,16 @@ def main():
     def exists(file_name):
         """Returns true if file exists."""
         return os.access(file_name, os.F_OK)
+
+    def grep(file_name, pattern):
+        """Searches a file for a regex pattern."""
+        regex = re.compile(pattern)
+        with open(file_name) as file_:
+            for line in file_:
+                if regex.search(line):
+                    return True
+        return False
+
 
     section_test_command_tuples = (
         (
@@ -54,6 +65,27 @@ def main():
             ),
             (
                 'sudo cp interfaces /etc/network/interfaces',
+            )
+        ),
+        (
+            'disable HDMI',
+            not grep('/etc/rc.local', 'tvservice'),
+            (
+                'sudo bash append.sh /etc/rc.local /usr/bin/tvservice -o',
+            )
+        ),
+        (
+            'disable Bluetooth',
+            not grep('/boot/config.txt', 'pi3-disable-bt'),
+            (
+                'sudo bash append.sh /boot/config.txt dtoverlay=pi3-disable-bt',
+            )
+        ),
+        (
+            'disable WiFi',
+            not grep('/boot/config.txt', 'pi3-disable-wifi'),
+            (
+                'sudo bash append.sh /boot/config.txt dtoverlay=pi3-disable-wifi',
             )
         ),
     )
