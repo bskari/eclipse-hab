@@ -12,7 +12,7 @@ SUP800F_BAUDRATE = 115200
 TRACKSOAR_BAUDRATE = 9600
 
 
-def main():
+def main(verbose):
     """Main."""
     logger = logging.getLogger('serial')
     stdout_handler = logging.StreamHandler(sys.stdout)
@@ -21,7 +21,10 @@ def main():
     # anything like that
     formatter = logging.Formatter('%(message)s')
     stdout_handler.setFormatter(formatter)
-    stdout_handler.setLevel(logging.DEBUG)
+    if verbose:
+        stdout_handler.setLevel(logging.DEBUG)
+    else:
+        stdout_handler.setLevel(logging.INFO)
     logger.addHandler(stdout_handler)
 
     ports = serial.tools.list_ports.comports()
@@ -37,7 +40,7 @@ def main():
         logger.info('Setting baudrate to %d', SUP800F_BAUDRATE)
         logger.info('Connected to SUP800F, switching it to binary mode')
         sup800f.switch_to_binary_mode(serial_)
-        dump_sup800f_binary_messages(serial_, logger)
+        dump_serial(serial_, logger)
     else:
         # Well, must be TrackSoar then
         logger.info('Setting baudrate to %d', TRACKSOAR_BAUDRATE)
@@ -55,7 +58,7 @@ def dump_serial(serial_, logger):
         datetime.datetime.now(),
         '%Y-%m-%d_%H:%M:%S.log'
     )
-    logger.debug('Opening %s', serial_file_name)
+    logger.info('Opening %s', serial_file_name)
 
     last_timestamp = datetime.datetime.now()
 
@@ -96,73 +99,19 @@ def dump_serial(serial_, logger):
                 bytes_read_count = 0
 
 
-def dump_sup800f_binary_messages(serial_, logger):
-    """Dumps the SUP800F binary messages from serial to a file."""
-    serial_path = 'serials'
-    if not os.path.isdir(serial_path):
-        os.mkdir(serial_path)
-
-    serial_file_name = serial_path + os.sep + datetime.datetime.strftime(
-        datetime.datetime.now(),
-        '%Y-%m-%d_%H:%M:%S.log'
-    )
-    logger.debug('Opening %s', serial_file_name)
-
-    last_timestamp = datetime.datetime.now()
-    message_count = 0
-
-    with open(serial_file_name, 'wb') as serial_file:
-        message_count = 0
-
-        while True:
-            message_bytes = sup800f.get_message(serial_)
-            # The SUP800F dumps some other type of message that's 66 bytes long.
-            # We only care about the binary stuff, which is always 41.
-            if len(message_bytes) != 41:
-                continue
-            message_count += 1
-            # We'll process and format these binary messages offline later
-            serial_file.write(message_bytes)
-
-            now = datetime.datetime.now()
-            if (now - last_timestamp).seconds > serial_.timeout:
-                time_stamp = datetime.datetime.strftime(now, '%Y-%m-%d %H:%M:%S')
-
-                serial_file.write('\n{}\n'.format(time_stamp).encode())
-                serial_file.flush()
-
-                logger.info('%s: read %d messages', time_stamp, message_count)
-                if message_bytes is not None:
-                    message = sup800f.parse_binary(message_bytes)
-                    if message is not None:
-                        logger.debug(
-                                'G %.3f %.3f %.3f M %.3f %.3f %.3f P %d C %.3f',
-                                message.acceleration_g_x,
-                                message.acceleration_g_y,
-                                message.acceleration_g_z,
-                                message.magnetic_flux_ut_x,
-                                message.magnetic_flux_ut_y,
-                                message.magnetic_flux_ut_z,
-                                message.pressure_p,
-                                message.temperature_c,
-                        )
-                    last_timestamp = now
-                message_count = 0
-
-
-
 def check_for_sup800f(serial_, logger):
     """Cheks for SUP800F connected to the serial port."""
-    logger.debug('Checking for SUP800F')
+    logger.info('Checking for SUP800F')
     try:
         sup800f.get_message(serial_, timeout_bytes=200)
     except ValueError:
-        logger.debug('No SUP800F found')
+        logger.info('No SUP800F found')
         return False
 
-    logger.debug('Found SUP800F')
+    logger.info('Found SUP800F')
     return True
 
 
 if __name__ == '__main__':
-    main()
+    verbose = ('-v' in sys.argv or '--verbose' in sys.argv)
+    main(verbose)
