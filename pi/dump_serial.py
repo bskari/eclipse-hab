@@ -102,14 +102,37 @@ def dump_serial(serial_, logger):
 def check_for_sup800f(serial_, logger):
     """Cheks for SUP800F connected to the serial port."""
     logger.info('Checking for SUP800F')
-    try:
-        sup800f.get_message(serial_, timeout_bytes=200)
-    except ValueError:
-        logger.info('No SUP800F found')
-        return False
+    # First, check if we're seeing PSTI messages. SUP800F loves dumping those
+    # in NMEA mode, and I don't think you can turn them off.
+    old_timeout_s = serial_.timeout
 
-    logger.info('Found SUP800F')
-    return True
+    # These should be spewing out at least once per second, so 5 should be safe
+    serial_.timeout = 5
+
+    def inner(serial_):
+        """Helper function to check for SUP800F. Defined as a convenience so
+        that I don't have a bunch of function return points where I need to
+        remember to reset the timeout.
+        """
+        try:
+            line = serial_.readline()
+            if line.startswith(b'$PSTI'):
+                return True
+        except TimeoutError:
+            return False
+
+        try:
+            sup800f.get_message(serial_, timeout_bytes=200)
+        except ValueError:
+            logger.info('No SUP800F found')
+            return False
+
+        logger.info('Found SUP800F')
+        return True
+
+    found = inner(serial_)
+    serial_.timeout = old_timeout_s
+    return found
 
 
 if __name__ == '__main__':

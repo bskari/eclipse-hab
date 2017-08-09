@@ -34,8 +34,7 @@ def main(serial_file_name, gui=True):
         except EOFError:
             break
         count += 1
-        if count % 100 == 0:
-            count = 0
+        if count % 100 == 0 and count < 501:
             print(message_bytes)
         # The SUP800F dumps some other type of message that's 66 bytes long.
         # We only care about the binary stuff, which is always 41.
