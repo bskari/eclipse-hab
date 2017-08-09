@@ -1,4 +1,3 @@
-import matplotlib.pyplot as pyplot
 import sys
 
 import sup800f
@@ -20,7 +19,7 @@ class ReadWrapper(object):
         return read_bytes
 
 
-def main(serial_file_name):
+def main(serial_file_name, gui=True):
     """Main."""
     if sys.version_info.major <= 2:
         print('Use Python 3')
@@ -47,8 +46,17 @@ def main(serial_file_name):
         if message is not None:
             data.append(message)
 
+    print('Received {} messages'.format(count))
+    print('Received {} binary messages'.format(len(data)))
+
     seconds = [i * 0.1 for i in range(len(data))]
     hours = [sec / 3600. for sec in seconds]
+
+    try:
+        import matplotlib.pyplot as pyplot
+    except ImportError:
+        print('matplotlib not installed, skipping GUI')
+        gui = False
 
     for attribute in (
             'acceleration_g_x',
@@ -60,17 +68,26 @@ def main(serial_file_name):
             'pressure_p',
             'temperature_c',
     ):
-        plot_data = [getattr(d, attribute) for d in data]
+        if gui:
+            plot_data = [getattr(d, attribute) for d in data]
 
-        pyplot.plot(hours, plot_data)
-        pyplot.xlabel('time (hours)')
-        pyplot.ylabel(attribute)
-        pyplot.grid(True)
-        pyplot.show()
+            pyplot.plot(hours, plot_data)
+            pyplot.xlabel('time (hours)')
+            pyplot.ylabel(attribute)
+            pyplot.grid(True)
+            pyplot.show()
+
+        else:
+            # Just print them
+            print('***** {} ******'.format(attribute))
+            for d in data:
+                print(getattr(d, attribute))
+            print('')
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print('Usage: {} <file>'.format(sys.argv[0]))
+    # Poverty command line argument parsing
+    if '-h' in sys.argv or len(sys.argv) < 2:
+        print('Usage: {} <file> [--no-gui]'.format(sys.argv[0]))
         sys.exit(0)
-    main(sys.argv[1])
+    main(sys.argv[1], '--no-gui' not in sys.argv)
