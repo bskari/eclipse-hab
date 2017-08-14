@@ -30,8 +30,12 @@ def main(verbose):
     ports = serial.tools.list_ports.comports()
     if len(ports) == 0:
         raise ValueError('No serial ports found')
-    # TODO: Pick the correct port if there are more than one
-    port_name, _, _ = ports[0]
+    # Prefer the USB port over others, because we enable the AMA port even if
+    # nothing is connected, but the USB will only show up if it's plugged in
+    for port_name, _, _ in ports:
+        if 'USB' in port_name:
+            break
+    # If nothing was found, port_name will just be whatever is last
     logger.setLevel(logging.DEBUG)
     logger.info('Found %d ports, reading from %s', len(ports), port_name)
 
