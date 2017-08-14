@@ -95,6 +95,13 @@ def main():
                 'sudo bash append.sh /boot/config.txt dtoverlay=pi3-disable-wifi',
             )
         ),
+        (
+            'enable SPI',
+            not grep('/boot/config.txt', 'dtparam=spi=on'),
+            (
+                'sudo bash append.sh /boot/config.txt dtparam=spi=on',
+            )
+        ),
     )
 
     for section, test, commands in section_test_command_tuples:
