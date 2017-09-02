@@ -1,3 +1,5 @@
+import datetime
+import re
 import sys
 
 import sup800f
@@ -5,18 +7,63 @@ import sup800f
 
 class ReadWrapper(object):
     def __init__(self, file_name):
+        # TODO: This won't work if processing data from the previous year
+        self._timestamp_regex = re.compile(
+                r'\n{year}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}}\n'.format(
+                    year=datetime.datetime.now().year
+                ).encode()
+        )
+        print(self._timestamp_regex)
         self._file = open(file_name, 'rb')
+        # Skip to the first message. All messages have a 1 byte checksum
+        # followed by 0x0D0A
+        self._buffer = self._file.read(1024)
+        index = 0
+        while index < len(self._buffer):
+            if self._buffer[index] != 0x0D:
+                index += 1
+                continue
+            index += 1
+            if self._buffer[index] != 0x0A:
+                index += 1
+                continue
+            break
+
+        self._buffer = self._buffer[index + 1:]
+        print('Skipped {} bytes to first message'.format(index))
+
+        skipped_gps_messages_count = 0
+        while len(self._buffer) < 1024:
+            part = self._file.read(1024)
+            self._buffer += part
+            # We might have accidentally picked up some GPS messages before
+            # switching modes; ignore them
+            while self._buffer.startswith(b'$'):
+                skipped_gps_messages_count += 1
+                index = self._buffer.find(b'\n')
+                if index != -1:
+                    self._buffer = self._buffer[index + 1:]
+            if len(part) == 0:
+                break
+        if skipped_gps_messages_count > 0:
+            print('Skipped {} GPS messages'.format(skipped_gps_messages_count))
 
     def read(self, count=None):
         """Reads some bytes."""
         if count is None:
             count = 1
-        read_bytes = self._file.read(count)
-        if len(read_bytes) == 0:
+        if len(self._buffer) < 1024:
+            read_bytes = self._file.read(1024)
+            subbed = self._timestamp_regex.sub(b'', read_bytes)
+            self._buffer += subbed
+        if len(self._buffer) == 0:
             self._file.close()
             raise EOFError('Nothing more to read')
 
-        return read_bytes
+        slice_ = self._buffer[:count]
+        self._buffer = self._buffer[count:]
+        print(slice_)
+        return slice_
 
 
 def main(serial_file_name, gui=True):

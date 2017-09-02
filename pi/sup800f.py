@@ -142,7 +142,6 @@ def check_response(ser, limit=None):
         if limit is None:
             return True
         else:
-            nonlocal count
             count += 1
             return count <= limit
 
