@@ -39,17 +39,28 @@ def main(verbose):
     logger.setLevel(logging.DEBUG)
     logger.info('Found %d ports, reading from %s', len(ports), port_name)
 
-    serial_ = serial.Serial(port_name, baudrate=SUP800F_BAUDRATE, timeout=60)
-    if check_for_sup800f(serial_, logger):
-        logger.info('Setting baudrate to %d', SUP800F_BAUDRATE)
-        logger.info('Connected to SUP800F, switching it to binary mode')
-        sup800f.switch_to_binary_mode(serial_)
-        dump_serial(serial_, logger)
+    if os.path.exists('serial-config.json'):
+        with open('serial-config.json') as serial_config_file:
+            serial_config = json.load(serial_config_file)
+        baud_rate = serial_config['baud-rate']
+        logger.info('Setting baudrate to %d', baud_rate)
+        serial_ = serial.Serial(port_name, baudrate=baud_rate, timeout=60)
+        if serial_config.get('sup800f', False):
+            logger.info('Connected to SUP800F, switching it to binary mode')
+            sup800f.switch_to_binary_mode(serial_)
     else:
-        # Well, must be TrackSoar then
-        logger.info('Setting baudrate to %d', TRACKSOAR_BAUDRATE)
-        serial_.baudrate = TRACKSOAR_BAUDRATE
-        dump_serial(serial_, logger)
+        logger.warn('serial-config.json not found, falling back to error-prone manual detection')
+        serial_ = serial.Serial(port_name, baudrate=SUP800F_BAUDRATE, timeout=60)
+        if check_for_sup800f(serial_, logger):
+            logger.info('Setting baudrate to %d', SUP800F_BAUDRATE)
+            logger.info('Connected to SUP800F, switching it to binary mode')
+            sup800f.switch_to_binary_mode(serial_)
+            dump_serial(serial_, logger)
+        else:
+            # Well, must be TrackSoar then
+            logger.info('Setting baudrate to %d', TRACKSOAR_BAUDRATE)
+            serial_.baudrate = TRACKSOAR_BAUDRATE
+            dump_serial(serial_, logger)
 
 
 def dump_serial(serial_, logger):

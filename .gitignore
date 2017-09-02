@@ -1,4 +1,5 @@
 pi/images
+pi/serial-config.json
 pi/temperatures
 pi/videos
 rtl-sdr/ppm-error.txt
