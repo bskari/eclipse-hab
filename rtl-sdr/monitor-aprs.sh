@@ -14,7 +14,7 @@ else
 fi
 
 rtl_fm_command="rtl_fm -f 144.390M -s 22050 -l ${squelch_level} -p ${ppm_error} -"
-multimon_command='multimon-ng -A -t raw --timestamp -'
+multimon_command='multimon-ng -A -t raw -s AFSK1200 --timestamp -'
 if [ -z "$(which pv)" ];
 then
 	pv_command='cat'
