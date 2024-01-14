@@ -33,18 +33,18 @@ def main():
         (
             'start up',
             (
-                not exists('/etc/init.d/eclipse-2017-hab-rc')
-                or newer('eclipse-2017-hab-rc', '/etc/init.d/eclipse-2017-hab-rc')
+                not exists('/etc/init.d/eclipse-hab-rc')
+                or newer('eclipse-hab-rc', '/etc/init.d/eclipse-hab-rc')
             ),
             (
-                'sudo cp eclipse-2017-hab-rc /etc/init.d/',
-                'sudo chmod +x /etc/init.d/eclipse-2017-hab-rc',
-                'sudo update-rc.d eclipse-2017-hab-rc defaults',
+                'sudo cp eclipse-hab-rc /etc/init.d/',
+                'sudo chmod +x /etc/init.d/eclipse-hab-rc',
+                'sudo update-rc.d eclipse-hab-rc defaults',
             )
         ),
         (
             'virtualenv',
-            not exists('/home/pi/.virtualenvs/eclipse-2017-hab'),
+            not exists('/home/pi/.virtualenvs/eclipse-hab'),
             (
                 'bash setup-virtualenv.sh',
             )

@@ -8,39 +8,39 @@ virtualenvwrapper=''
 function main() {
 	set_globals
 
-	tmux new -d -s eclipse-2017-hab
+	tmux new -d -s eclipse-hab
 
 	# Launch the video and image recording
-	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
-	tmux send-keys -t eclipse-2017-hab "source ${virtualenvwrapper}" c-m
-	tmux send-keys -t eclipse-2017-hab 'workon eclipse-2017-hab' c-m
-	tmux send-keys -t eclipse-2017-hab 'python record_video_and_stills.py' c-m
+	tmux send-keys -t eclipse-hab "cd ${base_dir}/pi" c-m
+	tmux send-keys -t eclipse-hab "source ${virtualenvwrapper}" c-m
+	tmux send-keys -t eclipse-hab 'workon eclipse-hab' c-m
+	tmux send-keys -t eclipse-hab 'python record_video_and_stills.py' c-m
 	# record_videos_and_stills.py monitors for low disk space, so when it exits,
 	# it's time to shut down
-	tmux send-keys -t eclipse-2017-hab 'bash setup/shutdown.sh' c-m
+	tmux send-keys -t eclipse-hab 'bash setup/shutdown.sh' c-m
 	wait_for_process 'record_video_and_stills.py'
 
 	# Launch the temperature recording
-	tmux new-window -t eclipse-2017-hab
-	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
-	tmux send-keys -t eclipse-2017-hab "source ${virtualenvwrapper}" c-m
-	tmux send-keys -t eclipse-2017-hab 'workon eclipse-2017-hab' c-m
-	tmux send-keys -t eclipse-2017-hab 'python log_temperature.py' c-m
+	tmux new-window -t eclipse-hab
+	tmux send-keys -t eclipse-hab "cd ${base_dir}/pi" c-m
+	tmux send-keys -t eclipse-hab "source ${virtualenvwrapper}" c-m
+	tmux send-keys -t eclipse-hab 'workon eclipse-hab' c-m
+	tmux send-keys -t eclipse-hab 'python log_temperature.py' c-m
 	wait_for_process 'log_temperature.py'
 
 	# Launch the serial dumper
-	tmux new-window -t eclipse-2017-hab
-	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
-	tmux send-keys -t eclipse-2017-hab "source ${virtualenvwrapper}" c-m
-	tmux send-keys -t eclipse-2017-hab 'workon eclipse-2017-hab' c-m
-	tmux send-keys -t eclipse-2017-hab 'python dump_serial.py' c-m
+	tmux new-window -t eclipse-hab
+	tmux send-keys -t eclipse-hab "cd ${base_dir}/pi" c-m
+	tmux send-keys -t eclipse-hab "source ${virtualenvwrapper}" c-m
+	tmux send-keys -t eclipse-hab 'workon eclipse-hab' c-m
+	tmux send-keys -t eclipse-hab 'python dump_serial.py' c-m
 	wait_for_process 'dump_serial.py'
 
 	# Launch the watchdog that blinks the LED to indicate status. This needs to be
 	# done last, because it checks for all of the above processes.
-	tmux new-window -t eclipse-2017-hab
-	tmux send-keys -t eclipse-2017-hab "cd ${base_dir}/pi" c-m
-	tmux send-keys -t eclipse-2017-hab 'bash setup/led-monitor.sh' c-m
+	tmux new-window -t eclipse-hab
+	tmux send-keys -t eclipse-hab "cd ${base_dir}/pi" c-m
+	tmux send-keys -t eclipse-hab 'bash setup/led-monitor.sh' c-m
 }
 
 
@@ -68,8 +68,8 @@ function set_globals() {
 	}
 
 	for i in \
-		"${HOME}/eclipse-2017-hab" \
-		"${HOME}/Documents/eclipse-2017-hab" \
+		"${HOME}/eclipse-hab" \
+		"${HOME}/Documents/eclipse-hab" \
 	; do
 		if [ -d "${i}" ] ;
 		then

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Prepares a fresh installation of an SD card for the 2017 Eclipse HAB. This
+# Prepares a fresh installation of an SD card for the Eclipse HAB. This
 # should be safe to run multiple times.
 
 # First, download Raspbian Lite and burn it to an SD card.
@@ -9,7 +9,7 @@
 #   (root password is raspberry)
 #   apt-get update
 #   apt-get install git
-#   git clone https://github.com/bskari/eclipse-2017-hab
+#   git clone https://github.com/bskari/eclipse-hab
 # Run this file!
 
 set -u
@@ -50,15 +50,15 @@ then
     exit 0
 fi
 
-echo 'Cloning Eclipse 2017 HAB repo'
+echo 'Cloning Eclipse HAB repo'
 pushd ~pi
-    if [ -e eclipse-2017-hab ];
+    if [ -e eclipse-hab ];
     then
-        pushd eclipse-2017-hab
+        pushd eclipse-hab
             git pull
         popd
     else
-        git clone git@github.com:eclipse-2017-hab
+        git clone git@github.com:bskari/eclipse-hab
     fi
 popd
 
