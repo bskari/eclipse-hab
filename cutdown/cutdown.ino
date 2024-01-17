@@ -3,7 +3,9 @@
 // Enter the current time in military time, e.g. "16:32:01" and the cutdown time in the same.
 // Use the radio buttons to see the current time, cutdown time, and countdown time.
 
+#include "esp_sleep.h"
 #include "esp_wifi.h"
+#include "esp_bt_main.h"
 
 /*
    -- balloon-cutdown --
@@ -72,27 +74,46 @@ struct {
 
 #define COUNT_OF(x) (sizeof(x) / sizeof(x[0]))
 
+const int BUTTON_PIN = 0;
+
 static bool currentTimeInitialized = false;
 static bool cutDownTimeInitialized = false;
 static int32_t cutDownTime_s = 0;
 static int32_t offset_s = 0;
+static decltype(millis()) initializedTime_ms = 0;
 
 void setup()
 {
   RemoteXY_Init();
-  esp_wifi_stop();
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT);
   digitalWrite(LED_BUILTIN, LOW);
 }
 
 void loop()
 {
-  RemoteXY_Handler();
-  // TODO you loop code
-  // use the RemoteXY structure for data transfer
-  // do not call delay(), use instead RemoteXY_delay()
-  updateDisplay();
-  readInputs();
+  static bool lowPower = false;
+  if (lowPower) {
+    // Sleep
+    esp_light_sleep_start();
+    if (digitalRead(BUTTON_PIN) == LOW) {
+      lowPower = false;
+    }
+  } else if (currentTimeInitialized && cutDownTimeInitialized && millis() > initializedTime_ms + 5 * 60 * 1000) {
+    lowPower = true;
+    // Shut off peripherals
+    esp_wifi_stop();
+    esp_bluedroid_disable();
+    esp_bluedroid_deinit();
+    esp_bt_controller_disable();
+    esp_bt_controller_deinit();
+    setCpuFrequencyMhz(10);
+    esp_sleep_enable_timer_wakeup(5 * 1000 * 1000);
+  } else {
+    RemoteXY_Handler();
+    updateDisplay();
+    readInputs();
+  }
   checkCutdown();
 }
 
@@ -155,6 +176,9 @@ void readInputs() {
       if (hour >= 0 && hour < 24 && minute >= 0 && minute < 60 && second >= 0 && second < 60) {
         offset_s = hour * 3600 + minute * 60 + second - (millis() / 1000);
         currentTimeInitialized = true;
+        if (currentTimeInitialized && cutDownTimeInitialized) {
+          initializedTime_ms = millis();
+        }
       }
     }
   }
@@ -165,6 +189,9 @@ void readInputs() {
       if (hour >= 0 && hour < 24 && minute >= 0 && minute < 60 && second >= 0 && second < 60) {
         cutDownTime_s = hour * 3600 + minute * 60 + second;
         cutDownTimeInitialized = true;
+        if (currentTimeInitialized && cutDownTimeInitialized) {
+          initializedTime_ms = millis();
+        }
       }
     }
   }
