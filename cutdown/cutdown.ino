@@ -75,6 +75,7 @@ struct {
 #define COUNT_OF(x) (sizeof(x) / sizeof(x[0]))
 
 const int BUTTON_PIN = 0;
+const int SWITCH_PIN = 12;
 
 static bool currentTimeInitialized = false;
 static bool cutDownTimeInitialized = false;
@@ -87,7 +88,9 @@ void setup()
   RemoteXY_Init();
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT);
+  pinMode(SWITCH_PIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(SWITCH_PIN, LOW);
 }
 
 void loop()
@@ -158,10 +161,7 @@ void displayTime(const int32_t originalSeconds) {
   const int hoursPart = seconds / 3600;
   const int minutesPart = (seconds - hoursPart * 3600) / 60;
   const int secondsPart = (seconds - hoursPart * 3600 - minutesPart * 60);
-  int success = snprintf(RemoteXY.timeText, COUNT_OF(RemoteXY.timeText), "%c%02d:%02d:%02d", sign, hoursPart, minutesPart, secondsPart);
-  if (success < 0) {
-    // TODO
-  }
+  snprintf(RemoteXY.timeText, COUNT_OF(RemoteXY.timeText), "%c%02d:%02d:%02d", sign, hoursPart, minutesPart, secondsPart);
 }
 
 void readInputs() {
@@ -211,9 +211,9 @@ void checkCutdown() {
   const int32_t currentTime_s = millis() / 1000 + offset_s;
   if (currentTime_s > cutDownTime_s && currentTime_s < cutDownTime_s + burnTime_s) {
     digitalWrite(LED_BUILTIN, HIGH);
-    // TODO: Turn on the switch to activate
+    digitalWrite(SWITCH_PIN, HIGH);
   } else {
-    // TODO: Turn off the switch
     digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(SWITCH_PIN, LOW);
   }
 }
