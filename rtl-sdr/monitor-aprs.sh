@@ -15,6 +15,6 @@ else
 fi
 
 rtl_fm_command="rtl_fm -f ${frequency} -p ${ppm_error} -"
-direwolf_command='direwolf -c sdr.conf -r 24000 -D 1 -t 0 -'
+direwolf_command='direwolf -c sdr.conf -r 24000 -D 1 -t 0 -l . -'
 echo "${rtl_fm_command} | ${direwolf_command}"
 ${rtl_fm_command} | ${direwolf_command}

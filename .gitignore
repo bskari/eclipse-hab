@@ -2,8 +2,7 @@ pi/images
 pi/serial-config.json
 pi/temperatures
 pi/videos
-rtl-sdr/ppm-error.txt
-rtl-sdr/squelch-level.txt
+rtl-sdr/*.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
