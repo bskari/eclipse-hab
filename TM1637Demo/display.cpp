@@ -37,8 +37,8 @@ int millis() {
   return (tv.tv_sec % (24 * 60 * 60)) * 1000 + tv.tv_usec / 1000;
 }
 struct Display {
-  static const int x = 20;
-  static const int y = 10;
+  static const int x = 1;
+  static const int y = 1;
   void begin() {}
   void clear() {
     wmove(stdscr, y + 1, x);
