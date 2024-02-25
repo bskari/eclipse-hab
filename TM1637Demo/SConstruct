@@ -1,0 +1,12 @@
+# vi: ft=python
+
+env = Environment()
+
+sources = ["test.cpp", "display.cpp", "sensors.cpp"]
+libs = ["m", "ncurses"]
+
+test = env.Program(target="test", source=sources)
+env.Append(LIBS=libs)
+env.Append(CCFLAGS="-std=c++11 -g -Wall -Wextra -Weffc++")
+
+Default(test)
