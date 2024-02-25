@@ -178,7 +178,7 @@ static void renderDisplay() {
             // It's not going to be < -99 C or above 999 C, just fudge it
             char buffer[5];
             // \xB0 is degrees symbol
-            snprintf(buffer, 5, "%d\xB0", wholeTemperature);
+            snprintf(buffer, 5, "% 3d\xB0", wholeTemperature);
             buffer[4] = '\0';
             display.showString(buffer);
             break;
