@@ -66,7 +66,7 @@ struct Display {
     if (leadingZero) {
       wprintw(stdscr, "%0*d", length - position, num);
     } else {
-      wprintw(stdscr, "%.*d", length - position, num);
+      wprintw(stdscr, "% *d", length - position, num);
     }
     wmove(stdscr, y + 2, x);
     wrefresh(stdscr);
@@ -128,8 +128,10 @@ static void renderDisplay() {
           break;
         case ScreenState_t::Display2:
           {
+            const int altitudeTenThousands = getTenThousandsAltitude_m();
+            const bool leadingZeroes = altitudeTenThousands > 0;
             const int altitudePart = getAltitudePart_m();
-            display.showNumber(altitudePart, true, 4, 0);
+            display.showNumber(altitudePart, leadingZeroes, 4, 0);
             #ifndef ARDUINO
             usleep(100000);
             #endif
