@@ -1,18 +1,19 @@
 #ifndef DISPLAY_HPP
 #define DISPLAY_HPP
 
-#include <TM1637TinyDisplay.h>
-
 enum class DisplayState_t {
-  Altitude,
+  Altitude = 0,
   VerticalSpeed,
   HorizontalSpeed,
   Temperature,
   Latitude,
   Longitude,
 };
-enum class PartState_t {
-  Info,
+const int DISPLAY_STATE_COUNT = 6;
+static_assert(DISPLAY_STATE_COUNT == static_cast<int>(DisplayState_t::Longitude) + 1);
+
+enum class ScreenState_t {
+  Info = 0,
   Display1,
   Display2,
 };
