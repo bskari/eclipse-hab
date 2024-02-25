@@ -3,6 +3,9 @@ pi/serial-config.json
 pi/temperatures
 pi/videos
 rtl-sdr/*.log
+TM1637Demo/.sconsign.dblite
+TM1637Demo/test
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
