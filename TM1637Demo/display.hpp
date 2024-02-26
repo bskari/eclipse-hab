@@ -13,7 +13,7 @@ const int DISPLAY_STATE_COUNT = 6;
 static_assert(DISPLAY_STATE_COUNT == static_cast<int>(DisplayState_t::Longitude) + 1);
 
 enum class ScreenState_t {
-  Info = 0,
+  Label = 0,
   Display1,
   Display2,
 };

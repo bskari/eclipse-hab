@@ -77,7 +77,7 @@ struct Display {
 #endif
 
 static DisplayState_t displayState = DisplayState_t::Altitude;
-static ScreenState_t screenState = ScreenState_t::Info;
+static ScreenState_t screenState = ScreenState_t::Label;
 static auto next_ms = millis();
 
 
@@ -91,7 +91,7 @@ void setupDisplay(int brightness) {
 
 void tickDisplay() {
   // We always want to update altitude display
-  if (displayState == DisplayState_t::Altitude && screenState != ScreenState_t::Info) {
+  if (displayState == DisplayState_t::Altitude && screenState != ScreenState_t::Label) {
     if (millis() > next_ms) {
       goToNextState();
     }
@@ -109,7 +109,7 @@ static void renderDisplay() {
   switch (displayState) {
     case DisplayState_t::Altitude:
       switch (screenState) {
-        case ScreenState_t::Info:
+        case ScreenState_t::Label:
           display.showString("ALTI");
           break;
         case ScreenState_t::Display1:
@@ -147,7 +147,7 @@ static void renderDisplay() {
 
     case DisplayState_t::VerticalSpeed:
       switch (screenState) {
-        case ScreenState_t::Info:
+        case ScreenState_t::Label:
           display.showString("VERT");
           break;
         case ScreenState_t::Display1:
@@ -160,7 +160,7 @@ static void renderDisplay() {
 
     case DisplayState_t::HorizontalSpeed:
       switch (screenState) {
-        case ScreenState_t::Info:
+        case ScreenState_t::Label:
           display.showString("HORI");
           break;
         case ScreenState_t::Display1:
@@ -173,7 +173,7 @@ static void renderDisplay() {
 
     case DisplayState_t::Temperature:
       switch (screenState) {
-        case ScreenState_t::Info:
+        case ScreenState_t::Label:
           display.showString("TEMP");
           break;
         case ScreenState_t::Display1:
@@ -195,7 +195,7 @@ static void renderDisplay() {
 
     case DisplayState_t::Latitude:
       switch (screenState) {
-        case ScreenState_t::Info:
+        case ScreenState_t::Label:
           // Save the latitude here so that if we roll over during display from e.g. 39.9999 to
           // 40.0001, we don't display 39 then 0001
           latitude = getLatitude_d();
@@ -212,7 +212,7 @@ static void renderDisplay() {
 
     case DisplayState_t::Longitude:
       switch (screenState) {
-        case ScreenState_t::Info:
+        case ScreenState_t::Label:
           // Save the longitude here so that if we roll over during display from e.g. 39.9999 to
           // 40.0001, we don't display 39 then 0001
           longitude = getLongitude_d();
@@ -273,7 +273,7 @@ static void renderCoordinate2(const decltype(getLatitude_d()) coordinate) {
  * Altitude
  */
 static void goToNextState() {
-  if (screenState == ScreenState_t::Info) {
+  if (screenState == ScreenState_t::Label) {
     screenState = ScreenState_t::Display1;
 
     // Display1 of altitude is boring, make it shorter
@@ -288,15 +288,15 @@ static void goToNextState() {
   } else if (screenState == ScreenState_t::Display1) {
     if (displayState == DisplayState_t::VerticalSpeed) {
       displayState = DisplayState_t::HorizontalSpeed;
-      screenState = ScreenState_t::Info;
+      screenState = ScreenState_t::Label;
       next_ms = millis() + SHORT_DELAY_MS;
     } else if (displayState == DisplayState_t::HorizontalSpeed) {
       displayState = DisplayState_t::Temperature;
-      screenState = ScreenState_t::Info;
+      screenState = ScreenState_t::Label;
       next_ms = millis() + SHORT_DELAY_MS;
     } else if (displayState == DisplayState_t::Temperature) {
       displayState = DisplayState_t::Latitude;
-      screenState = ScreenState_t::Info;
+      screenState = ScreenState_t::Label;
       next_ms = millis() + SHORT_DELAY_MS;
     } else {
       screenState = ScreenState_t::Display2;
@@ -319,7 +319,7 @@ static void goToNextState() {
       // This shouldn't happen
       assert(false && "Bad Display2 state?");
     }
-    screenState = ScreenState_t::Info;
+    screenState = ScreenState_t::Label;
     next_ms = millis() + SHORT_DELAY_MS;
   }
 }
