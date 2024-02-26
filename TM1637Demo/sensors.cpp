@@ -1,6 +1,3 @@
-#ifdef ARDUINO
-// TODO
-#else
 #include <stdlib.h>
 #include <math.h>
 float randNegOneToOne() {
@@ -28,7 +25,7 @@ float getLongitude_d() {
 float getAltitude_m() {
   static int altitude = 50;
 
-  if (altitude > 120 && altitude < 200) {
+  if (altitude > 420 && altitude < 500) {
     altitude = 9990;
   }
   return altitude += 1.5 + randNegOneToOne();
@@ -53,11 +50,11 @@ float getHorizontalSpeed_mps() {
 }
 
 float getTemperature_c() {
+  const float temps[] = {0.0f, -1.2f, 1.2f, -70.0f, 70.0f};
   static int count = 0;
-  if (count < 1) {
+  if (count < sizeof(temps) / sizeof(temps[0])) {
     ++count;
-    return 0.0f;
+    return temps[count];
   }
   return randNegOneToOne() * 70.0f;
 }
-#endif

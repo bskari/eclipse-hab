@@ -3,13 +3,14 @@
 #ifdef ARDUINO
 #include <Arduino.h>
 #include <TM1637TinyDisplay.h>
+#define NDEBUG
 #endif
 
 // Define Digital Pins
 static const int CLK = 22;
 static const int DIO = 21;
 
-static const int SHORT_DELAY_MS = 1000;
+static const int SHORT_DELAY_MS = 600;
 static const int LONG_DELAY_MS = 2000;
 
 static void renderDisplay();
@@ -40,6 +41,7 @@ struct Display {
   static const int x = 1;
   static const int y = 1;
   void begin() {}
+  void setBrightness(int) {}
   void clear() {
     wmove(stdscr, y + 1, x);
     wprintw(stdscr, "      ");
@@ -79,8 +81,12 @@ static ScreenState_t screenState = ScreenState_t::Info;
 static auto next_ms = millis();
 
 
-void setupDisplay() {
+void setupDisplay(int brightness) {
   display.begin();
+  if (brightness <= 0 || brightness > 8) {
+    brightness = 1;
+  }
+  display.setBrightness(brightness);
 }
 
 void tickDisplay() {
@@ -100,7 +106,6 @@ static void renderDisplay() {
   static decltype(getLatitude_d()) latitude;
   static decltype(getLongitude_d()) longitude;
 
-  display.clear();
   switch (displayState) {
     case DisplayState_t::Altitude:
       switch (screenState) {
@@ -111,14 +116,14 @@ static void renderDisplay() {
           {
             const int altitudeTenThousands = getTenThousandsAltitude_m();
             if (altitudeTenThousands == 0) {
-              screenState = ScreenState_t::Display2;
+              goToNextState();
             } else {
               // This is janky, but we shouldn't be above 100km or below 0m anyway
               if (altitudeTenThousands < 10) {
                 // Number, leading zero=false, length=4, position=0 (0=left)
-                display.showNumber(altitudeTenThousands, true, 4, 3);
+                display.showNumber(altitudeTenThousands, false, 1, 3);
               } else {
-                display.showNumber(altitudeTenThousands, true, 4, 2);
+                display.showNumber(altitudeTenThousands, false, 2, 2);
               }
             }
             #ifndef ARDUINO
@@ -270,7 +275,16 @@ static void renderCoordinate2(const decltype(getLatitude_d()) coordinate) {
 static void goToNextState() {
   if (screenState == ScreenState_t::Info) {
     screenState = ScreenState_t::Display1;
-    next_ms = millis() + LONG_DELAY_MS;
+
+    // Display1 of altitude is boring, make it shorter
+    if (displayState == DisplayState_t::Altitude) {
+      next_ms = millis() + 1000;
+    } else {
+      next_ms = millis() + LONG_DELAY_MS;
+    }
+
+    display.clear();
+
   } else if (screenState == ScreenState_t::Display1) {
     if (displayState == DisplayState_t::VerticalSpeed) {
       displayState = DisplayState_t::HorizontalSpeed;
@@ -286,7 +300,13 @@ static void goToNextState() {
       next_ms = millis() + SHORT_DELAY_MS;
     } else {
       screenState = ScreenState_t::Display2;
-      next_ms = millis() + LONG_DELAY_MS;
+
+      // Display2 of altitude is interesting, make it longer
+      if (displayState == DisplayState_t::Altitude) {
+        next_ms = millis() + LONG_DELAY_MS * 1.5;
+      } else {
+        next_ms = millis() + LONG_DELAY_MS;
+      }
     }
   } else if (screenState == ScreenState_t::Display2) {
     if (displayState == DisplayState_t::Latitude) {

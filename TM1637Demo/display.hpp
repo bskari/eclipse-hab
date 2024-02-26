@@ -19,7 +19,7 @@ enum class ScreenState_t {
 };
 
 
-void setupDisplay();
+void setupDisplay(int brightness);
 
 /**
  * Update the display if needed, and switch to the next state, if needed.
