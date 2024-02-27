@@ -64,6 +64,8 @@ def update_error(window, status: Status) -> None:
     if status.error:
         formatted = datetime.datetime.strftime(status.error_timestamp, "%H:%M:%S")
         window.addstr(1, 1, f"{formatted} {status.error}")
+        window.border()
+        window.refresh()
 
 
 def update_status(window, status: Status) -> None:
@@ -101,12 +103,13 @@ def update_status(window, status: Status) -> None:
     msg = recent.parsed_message
     msg2 = recent2.parsed_message
     horizontal_delta_m = distance(msg["latitude"], msg["longitude"], msg2["latitude"], msg2["longitude"])
-    vertical_delta_m = msg2["altitude"] - msg["altitude"]
-    seconds = (recent2.timestamp - recent.timestamp).total_seconds()
+    vertical_delta_m = msg["altitude"] - msg2["altitude"]
+    seconds = (recent.timestamp - recent2.timestamp).total_seconds()
     horizontal_ms = horizontal_delta_m / seconds
     vertical_ms = vertical_delta_m / seconds
     reported_horizontal_ms = msg["speed"] * 1000 / 3600
     seconds_ago = (datetime.datetime.now() - timestamp).total_seconds()
+    estimated_altitude_m = msg["altitude"] + seconds_ago * vertical_ms
     match = re.search(r"S(\d+)T(\d+)V(\d)+", recent_rs41.parsed_message["comment"])
     if match:
         groups = match.groups()
@@ -114,12 +117,14 @@ def update_status(window, status: Status) -> None:
         status.error = "No match"
         status.error_timestamp = datetime.datetime.now()
 
+    window.clear()
+    window.border()
     window.addstr(1, 1, f"Latitude: {msg['latitude']:.4f}")
     window.addstr(2, 1, f"Longitude: {msg['longitude']:.4f}")
-    window.addstr(3, 1, f"Altitude: {int(msg['altitude'])} m")
-    window.addstr(4, 1, f"Estimated altitude: {horizontal_ms:.1f} m")
-    window.addstr(5, 1, f"Course: {int(msg['course'])}°")
-    window.addstr(6, 1, f"Vertical: {vertical_ms:.1f} m/s")
+    window.addstr(3, 1, f"Altitude: {msg['altitude']:.1f} m")
+    window.addstr(4, 1, f"Estimated altitude: {estimated_altitude_m:.1f} m")
+    window.addstr(5, 1, f"Reported course: {int(msg['course'])}°")
+    window.addstr(6, 1, f"Computed vertical: {vertical_ms:.1f} m/s")
     window.addstr(7, 1, f"Reported horizontal: {reported_horizontal_ms:.1f} m/s")
     window.addstr(8, 1, f"Computed horizontal: {horizontal_ms:.1f} m/s")
     window.addstr(9, 1, f"Last seen: {int(seconds_ago)}s ago")
@@ -128,8 +133,17 @@ def update_status(window, status: Status) -> None:
     window.addstr(12, 1, f"Temperature: {groups[2]}° C")
     window.addstr(13, 1, f"Frequency: {status.frequency_hz}")
 
+    window.refresh()
 
+
+previous_message_count = 0
 def update_messages(window, status: Status) -> None:
+    global previous_message_count
+    if previous_message_count == len(status.messages):
+        return
+
+    window.clear()
+    window.border()
     # Show recent received messages
     for message_index in range(0, 10):
         if message_index >= len(status.messages):
@@ -141,6 +155,8 @@ def update_messages(window, status: Status) -> None:
             attributes = curses.A_BOLD
         window.addstr(message_index + 1, 1, f"{formatted} {message.parsed_message['raw']}", attributes)
 
+    window.refresh()
+
 
 def update_screen(
     error_window: curses.window,
@@ -148,23 +164,11 @@ def update_screen(
     messages_window: curses.window,
     status: Status,
 ) -> None:
-    error_window.clear()
-    status_window.clear()
-    messages_window.clear()
-
-    error_window.border()
-    status_window.border()
-    messages_window.border()
-
     update_status(status_window, status)
     update_messages(messages_window, status)
     # update_error should go last so that if updating another window causes an error, it will be
     # displayed
     update_error(error_window, status)
-
-    error_window.refresh()
-    status_window.refresh()
-    messages_window.refresh()
 
 
 def curses_main(stdscr) -> None:
@@ -183,6 +187,14 @@ def main(stdscr, receiver_class) -> None:
     status_window_length = 40
     status_window = curses.newwin(STATUS_LABELS_COUNT + 2, status_window_length, 3, 0)
     messages_window = curses.newwin(12, curses.COLS, STATUS_LABELS_COUNT + 5, 0)
+
+    error_window.border()
+    status_window.border()
+    messages_window.border()
+
+    error_window.refresh()
+    status_window.refresh()
+    messages_window.refresh()
 
     while True:
         # Wait for a message on this frequency from KE0FZV
@@ -217,7 +229,7 @@ def main(stdscr, receiver_class) -> None:
                 break
 
         update_screen(error_window, status_window, messages_window, status)
-        receiver.terminate()
+        parent_pipe.send("die")
         receiver.join()
 
         if (datetime.datetime.now() - start).total_seconds() > timeout_s:
@@ -226,10 +238,10 @@ def main(stdscr, receiver_class) -> None:
 
 
 class MessageReceiver(multiprocessing.Process):
-    def __init__(self, frequency_hz: int, pipe):
+    def __init__(self, frequency_hz: int, pipe: multiprocessing.Pipe):
         super().__init__()
-        self.frequency_hz = frequency_hz
-        self.pipe = pipe
+        self.frequency_hz: int = frequency_hz
+        self.pipe: multiprocessing.Pipe = pipe
 
     def run(self) -> None:
         rtl_fm = subprocess.Popen(
@@ -244,32 +256,40 @@ class MessageReceiver(multiprocessing.Process):
         )
         while True:
             line = direwolf.stdout.readline()
+
+            if line == "":
+                # The other thread will notify us if it's time to shut down
+                anything = self.pipe.poll(0.1)
+                if anything:
+                    rtl_fm.terminate()
+                    direwolf.terminate()
+                    return
+
             if "audio level" in line:
                 # The next line should have the APRS message
                 raw_message = " ".join(direwolf.stdout.readline().split(" ")[1:])
                 self.pipe.write(raw_message)
 
 
-altitude = [5280]
+test_receiver_start = datetime.datetime.now()
 class TestReceiver(multiprocessing.Process):
-    def __init__(self, _: int, pipe):
+    def __init__(self, _: int, pipe: multiprocessing.Pipe):
         super().__init__()
-        self.pipe = pipe
-
+        self.pipe: multiprocessing.Pipe = pipe
+    
     def run(self) -> None:
-        while self.is_alive():
-            try:
-                time.sleep(0.1)
-            except KeyboardInterrupt:
-                # This will happen when the parent terminates the process
+        while True:
+            # The other thread will notify us if it's time to shut down
+            anything = self.pipe.poll(0.1)
+            if anything:
                 return
 
             import random
             if random.randint(0, 10) == 0:
                 callsign = f"KE{random.randint(0, 3)}FZV"
-                global altitude
-                message = f"{callsign}-11>APZ41N:!4000.00N/10500.00WO302/001/A={altitude[0]:06}/S6T28V2455C00"
-                altitude[0] += random.randint(0, 4)
+                global test_receiver_start
+                altitude = int((datetime.datetime.now() - test_receiver_start).total_seconds()) + 5280
+                message = f"{callsign}-11>APZ41N:!4000.00N/10500.00WO302/001/A={altitude:06}/S6T28V2455C00"
                 self.pipe.send(message)
                 time.sleep(1)
 
@@ -286,6 +306,12 @@ def distance(lat1, long1, lat2, long2):
     )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return radius_m * c
+
+
+def debug_log(message: str) -> None:
+    formatted = datetime.datetime.strftime(datetime.datetime.now(), "%H:%M:%S")
+    with open("debug.txt", "a") as file:
+        file.write(formatted + ":" + message + "\n")
 
 
 if __name__ == "__main__":
