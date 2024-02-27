@@ -7,11 +7,12 @@ except:
     raise
 
 import curses
+import copy
 import dataclasses
 import datetime
-import itertools
 import math
 import multiprocessing
+import re
 import subprocess
 import time
 import typing
@@ -19,6 +20,8 @@ import typing
 
 CALL_SIGN = "KE0FZV"
 OFFSET_S = 4 * 60 + 10
+# Balloon status
+STATUS_LABELS_COUNT = 13
 
 
 @dataclasses.dataclass
@@ -50,66 +53,23 @@ class AprsMessage:
 class Status:
     frequency_hz: int = 144390000
     messages: typing.List[AprsMessage] = dataclasses.field(default_factory=list)
-    last_call_sign_timestamp: typing.Optional[datetime.datetime] = None
+    last_call_sign_timestamp: datetime.datetime = None
     monitor_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
     overall_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
-    error: typing.Optional[str] = None
-    error_timestamp: typing.Optional[datetime.datetime] = None
+    error: str = None
+    error_timestamp: datetime.datetime = None
 
 
-def initialize_screen():
-    """Initialize a screen."""
-    stdscr = curses.initscr()
-    # Don't echo keypresses
-    curses.noecho()
-    # Process keys instantly, instead of waiting for enter
-    curses.cbreak()
-    # Use special values for keys, e.g. curses.KEY_LEFT, instead of multibyte escape sequences
-    stdscr.keypad(True)
-    return stdscr
-
-
-def end_screen(stdscr):
-    """End a screen."""
-    curses.nocbreak()
-    stdscr.keypad(False)
-    curses.echo()
-    curses.endwin()
-
-
-def update_screen(
-    stdscr,
-    status: Status,
-) -> None:
-    stdscr.clear()
-
-    # Balloon status
-    labels = (
-        "Latitude:",
-        "Longitude:",
-        "Altitude:",
-        "Vertical:",
-        "Course:",
-        "Reported Horizontal:",
-        "Computed Horizontal:",
-        "Estimated altitude:",
-        "Last seen:",
-        "Satellites:",
-        "Voltage:",
-        "Temperature:",
-        "Frequency:",
-    )
-    for y, label in enumerate(labels):
-        stdscr.addstr(y + 1, 0, label)
-
+def update_error(window, status: Status) -> None:
     if status.error:
         formatted = datetime.datetime.strftime(status.error_timestamp, "%H:%M:%S")
-        stdscr.addstr(0, 0, formatted)
-        stdscr.addstr(0, len(formatted), status.error)
+        window.addstr(0, 0, f"{formatted} {status.error}")
 
-    recent = None
-    recent2 = None
-    recent_rs41 = None
+
+def update_status(window, status: Status) -> None:
+    recent: AprsMessage = None
+    recent2: AprsMessage = None
+    recent_rs41: AprsMessage = None
     for message_index in range(len(status.messages) - 1, -1, -1):
         message = status.messages[message_index]
         if CALL_SIGN in message.parsed_message["from"]:
@@ -118,52 +78,92 @@ def update_screen(
             elif not recent2:
                 recent2 = message
 
-            if not recent_rs41 and message.parsed_message["comment"].startswith("S"):
+            if not recent_rs41 and message.parsed_message["to"] == "APZ41N":
                 recent_rs41 = message
-            
+
             if recent and recent2 and recent_rs41:
                 break
 
-    if recent:
-        timestamp = recent.timestamp
-        msg = recent.parsed_message
+    # Fudge data so that the screen still gets rendered
+    dummy = AprsMessage(
+        {"latitude": 0, "longitude": 0, "altitude": 0, "course": 0, "speed": 0, "comment": "S0T0V0"},
+        timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
+    )
+    if not recent:
+        recent = dummy
+    if not recent2:
+        recent2 = copy.deepcopy(dummy)
+        recent2.timestamp = recent2.timestamp - datetime.timedelta(seconds=60 * 60 * 24)
+    if not recent_rs41:
+        recent_rs41 = dummy
 
-        stdscr.addstr(1, len(labels[0]) + 1, f"{msg['latitude']:.4f}")
-        stdscr.addstr(2, len(labels[1]) + 1, f"{msg['longitude']:.4f}")
-        stdscr.addstr(3, len(labels[2]) + 1, f"{int(msg['altitude'])} m")
-        stdscr.addstr(5, len(labels[4]) + 1, f"{int(msg['course'])}°")
-        reported_horizontal_ms = msg["speed"] * 1000 / 3600
-        stdscr.addstr(6, len(labels[5]) + 1, f"{reported_horizontal_ms:.1f} m/s")
-        seconds_ago = (datetime.datetime.now() - timestamp).total_seconds()
-        stdscr.addstr(9, len(labels[8]) + 1, f"{int(seconds_ago)}s ago")
+    timestamp = recent.timestamp
+    msg = recent.parsed_message
+    msg2 = recent2.parsed_message
+    horizontal_delta_m = distance(msg["latitude"], msg["longitude"], msg2["latitude"], msg2["longitude"])
+    vertical_delta_m = msg2["altitude"] - msg["altitude"]
+    seconds = (recent2.timestamp - recent.timestamp).total_seconds()
+    horizontal_ms = horizontal_delta_m / seconds
+    vertical_ms = vertical_delta_m / seconds
+    reported_horizontal_ms = msg["speed"] * 1000 / 3600
+    seconds_ago = (datetime.datetime.now() - timestamp).total_seconds()
+    match = re.search(r"S(\d+)T(\d+)V(\d)+", recent_rs41.parsed_message["comment"])
+    if match:
+        groups = match.groups()
+    else:
+        status.error = "No match"
+        status.error_timestamp = datetime.datetime.now()
 
-    if recent2:
-        msg2 = recent2.parsed_message
-        horizontal_delta_m = distance(msg["latitude"], msg["longitude"], msg2["latitude"], msg2["longitude"])
-        vertical_delta_m = msg2["altitude"] - msg["altitude"]
-        seconds = (recent2.timestamp - recent.timestamp).total_seconds()
-        horizontal_ms = horizontal_delta_m / seconds
-        vertical_ms = vertical_delta_m / seconds
-        stdscr.addstr(4, len(labels[3]) + 1, f"{vertical_ms:.1f} m/s")
-        stdscr.addstr(7, len(labels[6]) + 1, f"{horizontal_ms:.1f} m/s")
+    window.addstr(0, 0, f"Latitude: {msg['latitude']:.4f}")
+    window.addstr(1, 0, f"Longitude: {msg['longitude']:.4f}")
+    window.addstr(2, 0, f"Altitude: {int(msg['altitude'])} m")
+    window.addstr(3, 0, f"Estimated altitude: {horizontal_ms:.1f} m")
+    window.addstr(4, 0, f"Course: {int(msg['course'])}°")
+    window.addstr(5, 0, f"Vertical: {vertical_ms:.1f} m/s")
+    window.addstr(6, 0, f"Reported horizontal: {reported_horizontal_ms:.1f} m/s")
+    window.addstr(7, 0, f"Computed horizontal: {horizontal_ms:.1f} m/s")
+    window.addstr(8, 0, f"Last seen: {int(seconds_ago)}s ago")
+    window.addstr(9, 0, f"Satellites: {groups[0]}")
+    window.addstr(10, 0, f"Voltage: {groups[1]} V")
+    window.addstr(11, 0, f"Temperature: {groups[2]}° C")
+    window.addstr(12, 0, f"Frequency: {status.frequency_hz}")
 
+
+def update_messages(window, status: Status) -> None:
+    # Show recent received messages
     for message_index in range(0, 10):
         if message_index >= len(status.messages):
             break
         message = status.messages[-message_index - 1]
         formatted = datetime.datetime.strftime(message.timestamp, "%H:%M:%S")
-        y = len(labels) + 2 + message_index
         attributes = 0 
         if CALL_SIGN in message.parsed_message["from"]:
             attributes = curses.A_BOLD
-        stdscr.addstr(y, 0, formatted, attributes)
-        stdscr.addstr(y, len(formatted) + 1, message.parsed_message["raw"], attributes)
+        window.addstr(message_index, 0, f"{formatted} {message.parsed_message['raw']}", attributes)
 
-    stdscr.refresh()
+
+def update_screen(
+    error_window: curses.window,
+    status_window: curses.window,
+    messages_window: curses.window,
+    status: Status,
+) -> None:
+    error_window.clear()
+    status_window.clear()
+    messages_window.clear()
+
+    update_status(status_window, status)
+    update_messages(messages_window, status)
+    # update_error should go last so that if updating another window causes an error, it will be
+    # displayed
+    update_error(error_window, status)
+
+    error_window.refresh()
+    status_window.refresh()
+    messages_window.refresh()
 
 
 def curses_main(stdscr) -> None:
-    initialize_screen()
     main(stdscr, TestReceiver)
     # main(stdscr, MessageReceiver)
 
@@ -174,6 +174,11 @@ def main(stdscr, receiver_class) -> None:
     frequencies = (144390000, 432560000)
     timeout_s = 60 * 5
     frequency_index = 0
+
+    error_window = curses.newwin(1, curses.COLS, 0, 0)
+    status_window_length = 30
+    status_window = curses.newwin(STATUS_LABELS_COUNT, status_window_length, 1, 0)
+    messages_window = curses.newwin(10, curses.COLS, STATUS_LABELS_COUNT + 1, 0)
 
     while True:
         # Wait for a message on this frequency from KE0FZV
@@ -200,14 +205,14 @@ def main(stdscr, receiver_class) -> None:
                         found_call_sign = True
                         break
 
-                update_screen(stdscr, status)
+                update_screen(error_window, status_window, messages_window, status)
 
             except Exception as exc:
                 status.error = str(exc)
                 status.error_timestamp = datetime.datetime.now()
                 break
 
-        update_screen(stdscr, status)
+        update_screen(error_window, status_window, messages_window, status)
         receiver.terminate()
         receiver.join()
 
