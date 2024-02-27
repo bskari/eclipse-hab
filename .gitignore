@@ -3,6 +3,7 @@ pi/serial-config.json
 pi/temperatures
 pi/videos
 rtl-sdr/*.log
+rtl-sdr/aprslib
 TM1637Demo/.sconsign.dblite
 TM1637Demo/test
 
