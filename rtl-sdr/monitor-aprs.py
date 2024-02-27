@@ -63,7 +63,7 @@ class Status:
 def update_error(window, status: Status) -> None:
     if status.error:
         formatted = datetime.datetime.strftime(status.error_timestamp, "%H:%M:%S")
-        window.addstr(0, 0, f"{formatted} {status.error}")
+        window.addstr(1, 1, f"{formatted} {status.error}")
 
 
 def update_status(window, status: Status) -> None:
@@ -114,19 +114,19 @@ def update_status(window, status: Status) -> None:
         status.error = "No match"
         status.error_timestamp = datetime.datetime.now()
 
-    window.addstr(0, 0, f"Latitude: {msg['latitude']:.4f}")
-    window.addstr(1, 0, f"Longitude: {msg['longitude']:.4f}")
-    window.addstr(2, 0, f"Altitude: {int(msg['altitude'])} m")
-    window.addstr(3, 0, f"Estimated altitude: {horizontal_ms:.1f} m")
-    window.addstr(4, 0, f"Course: {int(msg['course'])}°")
-    window.addstr(5, 0, f"Vertical: {vertical_ms:.1f} m/s")
-    window.addstr(6, 0, f"Reported horizontal: {reported_horizontal_ms:.1f} m/s")
-    window.addstr(7, 0, f"Computed horizontal: {horizontal_ms:.1f} m/s")
-    window.addstr(8, 0, f"Last seen: {int(seconds_ago)}s ago")
-    window.addstr(9, 0, f"Satellites: {groups[0]}")
-    window.addstr(10, 0, f"Voltage: {groups[1]} V")
-    window.addstr(11, 0, f"Temperature: {groups[2]}° C")
-    window.addstr(12, 0, f"Frequency: {status.frequency_hz}")
+    window.addstr(1, 1, f"Latitude: {msg['latitude']:.4f}")
+    window.addstr(2, 1, f"Longitude: {msg['longitude']:.4f}")
+    window.addstr(3, 1, f"Altitude: {int(msg['altitude'])} m")
+    window.addstr(4, 1, f"Estimated altitude: {horizontal_ms:.1f} m")
+    window.addstr(5, 1, f"Course: {int(msg['course'])}°")
+    window.addstr(6, 1, f"Vertical: {vertical_ms:.1f} m/s")
+    window.addstr(7, 1, f"Reported horizontal: {reported_horizontal_ms:.1f} m/s")
+    window.addstr(8, 1, f"Computed horizontal: {horizontal_ms:.1f} m/s")
+    window.addstr(9, 1, f"Last seen: {int(seconds_ago)}s ago")
+    window.addstr(10, 1, f"Satellites: {groups[0]}")
+    window.addstr(11, 1, f"Voltage: {groups[1]} V")
+    window.addstr(12, 1, f"Temperature: {groups[2]}° C")
+    window.addstr(13, 1, f"Frequency: {status.frequency_hz}")
 
 
 def update_messages(window, status: Status) -> None:
@@ -139,7 +139,7 @@ def update_messages(window, status: Status) -> None:
         attributes = 0 
         if CALL_SIGN in message.parsed_message["from"]:
             attributes = curses.A_BOLD
-        window.addstr(message_index, 0, f"{formatted} {message.parsed_message['raw']}", attributes)
+        window.addstr(message_index + 1, 1, f"{formatted} {message.parsed_message['raw']}", attributes)
 
 
 def update_screen(
@@ -151,6 +151,10 @@ def update_screen(
     error_window.clear()
     status_window.clear()
     messages_window.clear()
+
+    error_window.border()
+    status_window.border()
+    messages_window.border()
 
     update_status(status_window, status)
     update_messages(messages_window, status)
@@ -175,10 +179,10 @@ def main(stdscr, receiver_class) -> None:
     timeout_s = 60 * 5
     frequency_index = 0
 
-    error_window = curses.newwin(1, curses.COLS, 0, 0)
-    status_window_length = 30
-    status_window = curses.newwin(STATUS_LABELS_COUNT, status_window_length, 1, 0)
-    messages_window = curses.newwin(10, curses.COLS, STATUS_LABELS_COUNT + 1, 0)
+    error_window = curses.newwin(3, curses.COLS, 0, 0)
+    status_window_length = 40
+    status_window = curses.newwin(STATUS_LABELS_COUNT + 2, status_window_length, 3, 0)
+    messages_window = curses.newwin(12, curses.COLS, STATUS_LABELS_COUNT + 5, 0)
 
     while True:
         # Wait for a message on this frequency from KE0FZV
