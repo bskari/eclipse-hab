@@ -74,7 +74,7 @@ def update_status(window, status: Status) -> None:
 
     # Fudge data so that the screen still gets rendered
     dummy = AprsMessage(
-        call_sign="KE0FZV",
+        call_sign="KE0FZV-11",
         altitude_m=0.0,
         latitude_d=0.0,
         longitude_d=0.0,
@@ -175,7 +175,7 @@ def main(stdscr, receiver_class) -> None:
     status = Status()
     status.messages.append(
         AprsMessage(
-            call_sign="KE0FZV",
+            call_sign="KE0FZV-11",
             altitude_m=0.0,
             latitude_d=0.0,
             longitude_d=0.0,
@@ -212,8 +212,10 @@ def main(stdscr, receiver_class) -> None:
         frequency_hz = frequencies_hz[frequency_index]
         status.frequency_hz = frequency_hz
         parent_pipe, child_pipe = multiprocessing.Pipe()
+        debug_log(f"Starting a new receiver class {frequency_hz}")
         receiver = receiver_class(frequency_hz, child_pipe)
         receiver.start()
+        debug_log("Started")
         found_call_sign = False
 
         while (datetime.datetime.now() - start).total_seconds() < timeout_s and not found_call_sign:
@@ -249,7 +251,7 @@ def main(stdscr, receiver_class) -> None:
                     )
                     if CALL_SIGN in row["source"]:
                         # Found my message! Let's switch to the other frequency
-                        #found_call_sign = True
+                        found_call_sign = True
                         break
 
             except Exception as exc:
@@ -258,10 +260,11 @@ def main(stdscr, receiver_class) -> None:
                 break
 
         update_screen(error_window, status_window, messages_window, status)
-        debug_log("Terminating")
+        debug_log("Sending die")
         parent_pipe.send("die")
-        receiver.terminate()
+        debug_log("Calling join")
         receiver.join()
+        debug_log("Joined")
 
         frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
@@ -278,6 +281,8 @@ class MessageReceiver(multiprocessing.Process):
 
     def run(self) -> None:
         file_name = "monitor.txt"
+        command = " ".join(("rtl_fm", "-f", str(self.frequency_hz), "-p", "0", "-"))
+        debug_log(f"Running {command}")
         rtl_fm = subprocess.Popen(
             ("rtl_fm", "-f", str(self.frequency_hz), "-p", "0", "-"),
             stdout=subprocess.PIPE,
@@ -296,8 +301,12 @@ class MessageReceiver(multiprocessing.Process):
             # The other thread will notify us if it's time to shut down
             anything = self.pipe.poll(0.1)
             if anything:
+                debug_log("Calling terminate and wait")
                 rtl_fm.terminate()
+                rtl_fm.wait()
                 direwolf.terminate()
+                direwolf.wait()
+                debug_log("Done calling terminate and wait")
                 return
 
             # I can't figure out how to read the lines from Direwolf that show the parsed messages.
