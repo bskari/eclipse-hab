@@ -6,6 +6,7 @@ import curses
 import dataclasses
 import datetime
 import io
+import logging
 import math
 import multiprocessing
 import multiprocessing.connection
@@ -22,6 +23,8 @@ STATUS_LABELS_COUNT = 14
 FT_PER_M = 3.2808399
 MPH_PER_MPS = 2.2369363
 
+logger = logging.getLogger()
+
 @dataclasses.dataclass
 class AprsMessage:
     call_sign: str
@@ -35,7 +38,8 @@ class AprsMessage:
     frequency_hz: int
     timestamp: datetime.datetime
 
-dummy = AprsMessage(
+
+DUMMY_APRS_MESSAGE = AprsMessage(
     call_sign="KE0FZV-11",
     altitude_m=0.0,
     latitude_d=0.0,
@@ -48,6 +52,7 @@ dummy = AprsMessage(
     timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
 )
 
+
 @dataclasses.dataclass
 class Status:
     frequency_hz: int = 144390000
@@ -55,16 +60,18 @@ class Status:
     last_call_sign_timestamp: typing.Optional[datetime.datetime] = None
     monitor_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
     overall_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
-    error: typing.Optional[str] = None
-    error_timestamp: typing.Optional[datetime.datetime] = None
 
 
-def update_error(window, status: Status) -> None:
-    if status.error and status.error_timestamp:
-        formatted = datetime.datetime.strftime(status.error_timestamp, "%H:%M:%S")
-        window.addstr(1, 1, f"{formatted} {status.error}")
-        window.border()
-        window.refresh()
+class CursesHandler(logging.Handler):
+    def __init__(self, error_window: curses.window):
+        super().__init__()
+        self.window: curses.window = error_window
+
+    def emit(self, record: logging.LogRecord):
+        _, max_x = self.window.getmaxyx()
+        formatted = self.format(record)
+        self.window.addnstr(1, 1, formatted, max_x - 2)
+        self.window.refresh()
 
 
 def update_status(window, status: Status) -> None:
@@ -89,13 +96,13 @@ def update_status(window, status: Status) -> None:
 
     # Fudge data so that the screen still gets rendered
     if not recent:
-        recent = dummy
+        recent = DUMMY_APRS_MESSAGE
     if not recent2:
-        recent2 = copy.deepcopy(dummy)
+        recent2 = copy.deepcopy(DUMMY_APRS_MESSAGE)
         # Fudge the time so that we don't divide by 0 seconds
         recent2.timestamp = recent2.timestamp - datetime.timedelta(seconds=60 * 60 * 24)
     if not recent_rs41:
-        recent_rs41 = dummy
+        recent_rs41 = DUMMY_APRS_MESSAGE
 
     timestamp = recent.timestamp
     msg = recent
@@ -143,6 +150,7 @@ def update_status(window, status: Status) -> None:
 
 
 def update_messages(window: curses.window, status: Status) -> None:
+    """Show recently received APRS packets."""
     if not hasattr(update_messages, "previous_message_count"):
         setattr(update_messages, "previous_message_count", 0)
     if update_messages.previous_message_count == len(status.messages):  # type: ignore
@@ -173,9 +181,7 @@ def update_stations(window: curses.window, status: Status) -> None:
     station_to_message: typing.Dict[str, AprsMessage] = dict()
     for message in status.messages:
         station_to_message[message.call_sign] = message
-    debug_log(f"Found {len(station_to_message)} unique stations")
     recents: typing.List[AprsMessage] = sorted(station_to_message.values(), key=lambda m: m.timestamp, reverse=True)
-    debug_log(f"Found {len(recents)} recents")
     now = datetime.datetime.now()
     launch_site = get_launch_site(status)
     max_y, max_x = window.getmaxyx()
@@ -190,7 +196,6 @@ def update_stations(window: curses.window, status: Status) -> None:
 
 
 def update_screen(
-    error_window: curses.window,
     status_window: curses.window,
     messages_window: curses.window,
     stations_window: curses.window,
@@ -199,9 +204,6 @@ def update_screen(
     update_status(status_window, status)
     update_messages(messages_window, status)
     update_stations(stations_window, status)
-    # update_error should go last so that if updating another window causes an error, it will be
-    # displayed
-    update_error(error_window, status)
 
 
 def get_launch_site(status: Status) -> AprsMessage:
@@ -213,7 +215,7 @@ def get_launch_site(status: Status) -> AprsMessage:
         if CALL_SIGN in message.call_sign:
             setattr(get_launch_site, "launch_site", message)
             return message
-    return dummy
+    return DUMMY_APRS_MESSAGE
 
 
 def curses_main(stdscr) -> None:
@@ -222,6 +224,7 @@ def curses_main(stdscr) -> None:
 
 
 def main(stdscr, receiver_class) -> None:
+
     status = Status()
 
     frequencies_hz = (144390000, 432560000)
@@ -244,28 +247,38 @@ def main(stdscr, receiver_class) -> None:
     messages_window.refresh()
     stations_window.refresh()
 
+    logger.setLevel(logging.DEBUG)
+    handler = CursesHandler(error_window)
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    handler.setLevel(logging.WARN)
+    logger.addHandler(handler)
+    handler = logging.FileHandler("debug.log")
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    handler.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+
     while True:
-        # Wait for a message on this frequency from KE0FZV
+        # Wait for a message on this frequency from my call sign
         start = datetime.datetime.now()
         status.monitor_start = start
         frequency_hz = frequencies_hz[frequency_index]
         status.frequency_hz = frequency_hz
         parent_pipe, child_pipe = multiprocessing.Pipe()
-        debug_log(f"Starting a new receiver class {frequency_hz}")
+        logger.debug(f"Starting a new receiver class {frequency_hz}")
         receiver = receiver_class(frequency_hz, child_pipe)
         receiver.start()
-        debug_log("Started")
+        logger.debug("Started")
         found_call_sign = False
 
         while (datetime.datetime.now() - start).total_seconds() < timeout_s and not found_call_sign:
             try:
-                update_screen(error_window, status_window, messages_window, stations_window, status)
+                update_screen(status_window, messages_window, stations_window, status)
                 data_waiting = parent_pipe.poll(0.5)
                 if data_waiting:
                     csv_message = parent_pipe.recv()
                     if not csv_message:
                         continue
-                    debug_log(f"{csv_message=}")
+                    logger.debug(f"{csv_message=}")
                     #parsed = aprslib.parse(raw_message)
                     field_names = "chan,utime,isotime,source,heard,level,error,dti,name,symbol,latitude,longitude,speed,course,altitude,frequency,offset,tone,system,status,telemetry,comment".split(",")
                     fake_file = io.StringIO(csv_message)
@@ -288,7 +301,7 @@ def main(stdscr, receiver_class) -> None:
                             timestamp=datetime.datetime.now(),
                         )
                     )
-                    if CALL_SIGN in row["source"]:
+                    if CALL_SIGN in row["source/found"]:
                         # Found my message! Let's switch to the other frequency
                         found_call_sign = True
                         break
@@ -298,12 +311,12 @@ def main(stdscr, receiver_class) -> None:
                 status.error_timestamp = datetime.datetime.now()
                 break
 
-        update_screen(error_window, status_window, messages_window, stations_window, status)
-        debug_log("Sending die")
+        update_screen(status_window, messages_window, stations_window, status)
+        logger.debug("Sending die")
         parent_pipe.send("die")
-        debug_log("Calling join")
+        logger.debug("Calling join")
         receiver.join()
-        debug_log("Joined")
+        logger.debug("Joined")
 
         frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
@@ -321,7 +334,7 @@ class MessageReceiver(multiprocessing.Process):
     def run(self) -> None:
         file_name = "aprs.log"
         command = " ".join(("rtl_fm", "-f", str(self.frequency_hz), "-p", "0", "-"))
-        debug_log(f"Running {command}")
+        logger.debug(f"Running {command}")
         rtl_fm = subprocess.Popen(
             ("rtl_fm", "-f", str(self.frequency_hz), "-p", "0", "-"),
             stdout=subprocess.PIPE,
@@ -340,14 +353,14 @@ class MessageReceiver(multiprocessing.Process):
             # The other thread will notify us if it's time to shut down
             anything = self.pipe.poll(0.1)
             if anything:
-                debug_log("Calling terminate and wait")
+                logger.debug("Calling terminate and wait")
                 rtl_fm.terminate()
                 rtl_fm.communicate()
                 rtl_fm.wait()
                 direwolf.terminate()
                 direwolf.communicate()
                 direwolf.wait()
-                debug_log("Done calling terminate and wait")
+                logger.debug("Done calling terminate and wait")
                 return
 
             # I can't figure out how to read the lines from Direwolf that show the parsed messages.
@@ -407,7 +420,7 @@ def tail_file(file_name: str) -> str:
         with open(file_name, "r"):
             pass
     except FileNotFoundError:
-        debug_log(f"Unable to tail_file {file_name} because not found")
+        logger.debug(f"Unable to tail_file {file_name} because not found")
         return ""
 
     process = subprocess.Popen(
@@ -417,18 +430,10 @@ def tail_file(file_name: str) -> str:
     )
     # Mypy thinks this might be None?
     if process.stdout is None:
-        debug_log("tail_file has None process.stdout?")
+        logger.debug("tail_file has None process.stdout?")
         return ""
     
     return process.stdout.readline().decode()
-
-
-def debug_log(message: str) -> None:
-    formatted = datetime.datetime.strftime(datetime.datetime.now(), "%H:%M:%S")
-    with open("debug.log", "a") as file:
-        file.write(formatted + ":" + message)
-        if not message.endswith("\n"):
-            file.write("\n")
 
 
 if __name__ == "__main__":
