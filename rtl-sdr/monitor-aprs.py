@@ -190,7 +190,7 @@ def main(stdscr, receiver_class) -> None:
 
     frequencies_hz = (144390000, 432560000)
     timeout_s = 60 * 5
-    frequency_index = 0
+    frequency_index = 1
 
     error_window = curses.newwin(3, curses.COLS, 0, 0)
     status_window_length = 40
@@ -303,8 +303,10 @@ class MessageReceiver(multiprocessing.Process):
             if anything:
                 debug_log("Calling terminate and wait")
                 rtl_fm.terminate()
+                rtl_fm.communicate()
                 rtl_fm.wait()
                 direwolf.terminate()
+                direwolf.communicate()
                 direwolf.wait()
                 debug_log("Done calling terminate and wait")
                 return
@@ -385,7 +387,7 @@ def tail_file(file_name: str) -> str:
 
 def debug_log(message: str) -> None:
     formatted = datetime.datetime.strftime(datetime.datetime.now(), "%H:%M:%S")
-    with open("debug.txt", "a") as file:
+    with open("debug.log", "a") as file:
         file.write(formatted + ":" + message)
         if not message.endswith("\n"):
             file.write("\n")
