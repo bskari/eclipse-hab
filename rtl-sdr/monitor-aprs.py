@@ -18,8 +18,9 @@ import typing
 CALL_SIGN = "KE0FZV"
 OFFSET_S = 4 * 60 + 10
 # Balloon status
-STATUS_LABELS_COUNT = 13
-
+STATUS_LABELS_COUNT = 14
+FT_PER_M = 3.2808399
+MPH_PER_MPS = 2.2369363
 
 @dataclasses.dataclass
 class AprsMessage:
@@ -58,6 +59,8 @@ def update_status(window, status: Status) -> None:
     recent: typing.Optional[AprsMessage] = None
     recent2: typing.Optional[AprsMessage] = None
     recent_rs41: typing.Optional[AprsMessage] = None
+    launch_site: typing.Optional[AprsMessage] = None
+
     for message_index in range(len(status.messages) - 1, -1, -1):
         message = status.messages[message_index]
         if CALL_SIGN in message.call_sign:
@@ -72,6 +75,12 @@ def update_status(window, status: Status) -> None:
             if recent and recent2 and recent_rs41:
                 break
 
+    # Assume that the first message from us is the launch site's location
+    for message in status.messages:
+        if CALL_SIGN in message.call_sign:
+            launch_site = message
+            break
+
     # Fudge data so that the screen still gets rendered
     dummy = AprsMessage(
         call_sign="KE0FZV-11",
@@ -81,7 +90,7 @@ def update_status(window, status: Status) -> None:
         course_d=0.0,
         horizontal_speed_mps=0.0,
         symbol="O",
-        comment="S0T0V0 dummy message",
+        comment="/S0T0V0001C00 dummy message",
         frequency_hz=144390000,
         timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
     )
@@ -89,14 +98,18 @@ def update_status(window, status: Status) -> None:
         recent = dummy
     if not recent2:
         recent2 = copy.deepcopy(dummy)
+        # Fudge the time so that we don't divide by 0 seconds
         recent2.timestamp = recent2.timestamp - datetime.timedelta(seconds=60 * 60 * 24)
     if not recent_rs41:
         recent_rs41 = dummy
+    if not launch_site:
+        launch_site = dummy
 
     timestamp = recent.timestamp
     msg = recent
     msg2 = recent2
-    horizontal_delta_m = distance(msg.latitude_d, msg.longitude_d, msg2.latitude_d, msg2.longitude_d)
+    distance_km = distance_m(msg.latitude_d, msg.longitude_d, launch_site.latitude_d, launch_site.longitude_d) / 1000
+    horizontal_delta_m = distance_m(msg.latitude_d, msg.longitude_d, msg2.latitude_d, msg2.longitude_d)
     vertical_delta_m = msg.altitude_m - msg2.altitude_m
     seconds = (recent.timestamp - recent2.timestamp).total_seconds()
     horizontal_ms = horizontal_delta_m / seconds
@@ -104,51 +117,60 @@ def update_status(window, status: Status) -> None:
     reported_horizontal_ms = msg.horizontal_speed_mps * 1000 / 3600
     seconds_ago = (datetime.datetime.now() - timestamp).total_seconds()
     estimated_altitude_m = msg.altitude_m + seconds_ago * vertical_ms
-    match = re.search(r"S(\d+)T(\d+)V(\d)+", recent_rs41.comment)
+    match = re.search(r"S(\d+)T(\d+)V(\d+)", recent_rs41.comment)
     if match:
         groups = match.groups()
+        satellite_count = int(groups[0])
+        temperature_c = int(groups[1])
+        battery_v = float(groups[2]) / 1000
     else:
-        status.error = "No match"
+        status.error = f"Unable to parse comment field {recent_rs41.comment}"
         status.error_timestamp = datetime.datetime.now()
+        satellite_count = 0
+        battery_v = 0.0
+        temperature_c = 0
 
     window.clear()
     window.border()
     window.addstr(1, 1, f"Latitude: {msg.latitude_d:.4f}")
     window.addstr(2, 1, f"Longitude: {msg.longitude_d:.4f}")
-    window.addstr(3, 1, f"Altitude: {msg.altitude_m:.1f} m")
-    window.addstr(4, 1, f"Estimated altitude: {estimated_altitude_m:.1f} m")
-    window.addstr(5, 1, f"Reported course: {int(msg.course_d)}°")
-    window.addstr(6, 1, f"Computed vertical: {vertical_ms:.1f} m/s")
-    window.addstr(7, 1, f"Reported horizontal: {reported_horizontal_ms:.1f} m/s")
-    window.addstr(8, 1, f"Computed horizontal: {horizontal_ms:.1f} m/s")
-    window.addstr(9, 1, f"Last seen: {int(seconds_ago)}s ago")
-    window.addstr(10, 1, f"Satellites: {groups[0]}")
-    window.addstr(11, 1, f"Voltage: {groups[1]} V")
-    window.addstr(12, 1, f"Temperature: {groups[2]}° C")
-    window.addstr(13, 1, f"Frequency: {status.frequency_hz}")
+    window.addstr(3, 1, f"Distance: {distance_km:.2f} km, {distance_km * 0.62137119:.2f} mi")
+    window.addstr(4, 1, f"Altitude: {msg.altitude_m:.1f} m, {msg.altitude_m * FT_PER_M:.1f} ft")
+    window.addstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft")
+    window.addstr(6, 1, f"Reported course: {int(msg.course_d)}°")
+    window.addstr(7, 1, f"Computed vert.: {vertical_ms:.1f} m/s, {vertical_ms * FT_PER_M:.1f} ft/s")
+    window.addstr(8, 1, f"Reported horiz.: {reported_horizontal_ms:.1f} m/s, {reported_horizontal_ms * MPH_PER_MPS:.1f} mph")
+    window.addstr(9, 1, f"Computed horiz.: {horizontal_ms:.1f} m/s, {horizontal_ms * MPH_PER_MPS:.1f} mph")
+    window.addstr(10, 1, f"Last seen: {int(seconds_ago)} s ago")
+    window.addstr(11, 1, f"Satellites: {satellite_count}")
+    window.addstr(12, 1, f"Voltage: {battery_v:.3f} V")
+    window.addstr(13, 1, f"Temperature: {temperature_c}°C, {temperature_c * 1.8 + 32:.0f}°F")
+    window.addstr(14, 1, f"Monitoring: {status.frequency_hz} hz")
 
     window.refresh()
 
 
 previous_message_count = 0
-def update_messages(window, status: Status) -> None:
+def update_messages(window: curses.window, status: Status) -> None:
     global previous_message_count
     if previous_message_count == len(status.messages):
         return
 
     window.clear()
     window.border()
+    max_y, max_x = window.getmaxyx()
     # Show recent received messages
-    for message_index in range(0, 10):
+    for message_index in range(0, max_y - 2):
         if message_index >= len(status.messages):
             break
-        message = status.messages[-message_index - 1]
-        timestamp = datetime.datetime.strftime(message.timestamp, "%H:%M:%S")
+        msg = status.messages[-message_index - 1]
+        timestamp = datetime.datetime.strftime(msg.timestamp, "%H:%M:%S")
         attributes = 0 
-        if CALL_SIGN in message.call_sign:
+        if CALL_SIGN in msg.call_sign:
             attributes = curses.A_BOLD
-        formatted = f"{message.call_sign} {message.latitude_d:.4f} {message.longitude_d:.4f} {message.altitude_m:.1f}m {message.symbol} {message.comment}"
-        window.addstr(message_index + 1, 1, f"{timestamp} {formatted}", attributes)
+        formatted = f"{msg.call_sign} {msg.latitude_d:.4f} {msg.longitude_d:.4f} {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
+        whole = f"{timestamp} {formatted}"
+        window.addnstr(message_index + 1, 1, whole, max_x - 2, attributes)
 
     window.refresh()
 
@@ -173,20 +195,6 @@ def curses_main(stdscr) -> None:
 
 def main(stdscr, receiver_class) -> None:
     status = Status()
-    status.messages.append(
-        AprsMessage(
-            call_sign="KE0FZV-11",
-            altitude_m=0.0,
-            latitude_d=0.0,
-            longitude_d=0.0,
-            course_d=0.0,
-            horizontal_speed_mps=0.0,
-            symbol="O",
-            comment="S0T0V0 dummy message",
-            frequency_hz=144390000,
-            timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
-        )
-    )
 
     frequencies_hz = (144390000, 432560000)
     timeout_s = 60 * 5
@@ -269,8 +277,8 @@ def main(stdscr, receiver_class) -> None:
         frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
         if (datetime.datetime.now() - start).total_seconds() > timeout_s:
-            # TODO: Warn that it took too long
-            pass
+            status.error = "Timed out waiting for message on frequency_hz"
+            status.error_timestamp = datetime.datetime.now()
 
 
 class MessageReceiver(multiprocessing.Process):
@@ -280,7 +288,7 @@ class MessageReceiver(multiprocessing.Process):
         self.pipe: multiprocessing.connection.Connection = pipe
 
     def run(self) -> None:
-        file_name = "monitor.txt"
+        file_name = "aprs.log"
         command = " ".join(("rtl_fm", "-f", str(self.frequency_hz), "-p", "0", "-"))
         debug_log(f"Running {command}")
         rtl_fm = subprocess.Popen(
@@ -349,7 +357,7 @@ class TestReceiver(multiprocessing.Process):
                 time.sleep(1)
 
 
-def distance(lat1, long1, lat2, long2):
+def distance_m(lat1: float, long1: float, lat2: float, long2: float) -> float:
     """Great circle distance."""
     radius_m = 6371 * 1000
     lat_delta_r = math.radians(lat2 - lat1)
