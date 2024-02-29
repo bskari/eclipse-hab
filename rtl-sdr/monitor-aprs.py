@@ -35,6 +35,18 @@ class AprsMessage:
     frequency_hz: int
     timestamp: datetime.datetime
 
+dummy = AprsMessage(
+    call_sign="KE0FZV-11",
+    altitude_m=0.0,
+    latitude_d=0.0,
+    longitude_d=0.0,
+    course_d=0.0,
+    horizontal_speed_mps=0.0,
+    symbol="O",
+    comment="/S0T0V0001C00 dummy message",
+    frequency_hz=144390000,
+    timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
+)
 
 @dataclasses.dataclass
 class Status:
@@ -59,7 +71,7 @@ def update_status(window, status: Status) -> None:
     recent: typing.Optional[AprsMessage] = None
     recent2: typing.Optional[AprsMessage] = None
     recent_rs41: typing.Optional[AprsMessage] = None
-    launch_site: typing.Optional[AprsMessage] = None
+    launch_site = get_launch_site(status)
 
     for message_index in range(len(status.messages) - 1, -1, -1):
         message = status.messages[message_index]
@@ -75,25 +87,7 @@ def update_status(window, status: Status) -> None:
             if recent and recent2 and recent_rs41:
                 break
 
-    # Assume that the first message from us is the launch site's location
-    for message in status.messages:
-        if CALL_SIGN in message.call_sign:
-            launch_site = message
-            break
-
     # Fudge data so that the screen still gets rendered
-    dummy = AprsMessage(
-        call_sign="KE0FZV-11",
-        altitude_m=0.0,
-        latitude_d=0.0,
-        longitude_d=0.0,
-        course_d=0.0,
-        horizontal_speed_mps=0.0,
-        symbol="O",
-        comment="/S0T0V0001C00 dummy message",
-        frequency_hz=144390000,
-        timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
-    )
     if not recent:
         recent = dummy
     if not recent2:
@@ -102,8 +96,6 @@ def update_status(window, status: Status) -> None:
         recent2.timestamp = recent2.timestamp - datetime.timedelta(seconds=60 * 60 * 24)
     if not recent_rs41:
         recent_rs41 = dummy
-    if not launch_site:
-        launch_site = dummy
 
     timestamp = recent.timestamp
     msg = recent
@@ -150,10 +142,10 @@ def update_status(window, status: Status) -> None:
     window.refresh()
 
 
-previous_message_count = 0
 def update_messages(window: curses.window, status: Status) -> None:
-    global previous_message_count
-    if previous_message_count == len(status.messages):
+    if not hasattr(update_messages, "previous_message_count"):
+        setattr(update_messages, "previous_message_count", 0)
+    if update_messages.previous_message_count == len(status.messages):  # type: ignore
         return
 
     window.clear()
@@ -172,6 +164,28 @@ def update_messages(window: curses.window, status: Status) -> None:
         whole = f"{timestamp} {formatted}"
         window.addnstr(message_index + 1, 1, whole, max_x - 2, attributes)
 
+    setattr(update_messages, "previous_message_count", len(status.messages))
+    window.refresh()
+
+
+def update_stations(window: curses.window, status: Status) -> None:
+    """Show the most recent stations received."""
+    station_to_message: typing.Dict[str, AprsMessage] = dict()
+    for message in status.messages:
+        station_to_message[message.call_sign] = message
+    debug_log(f"Found {len(station_to_message)} unique stations")
+    recents: typing.List[AprsMessage] = sorted(station_to_message.values(), key=lambda m: m.timestamp, reverse=True)
+    debug_log(f"Found {len(recents)} recents")
+    now = datetime.datetime.now()
+    launch_site = get_launch_site(status)
+    max_y, max_x = window.getmaxyx()
+    for count, msg in enumerate(recents):
+        distance_km = distance_m(launch_site.latitude_d, launch_site.longitude_d, msg.latitude_d, msg.longitude_d) / 1000
+        seconds = int((now - msg.timestamp).total_seconds())
+        info = f"{msg.call_sign}: {seconds}s ago {msg.latitude_d:.4f} {msg.longitude_d:.4f} {distance_km:.2f}km {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
+        window.addnstr(1 + count, 1, info, max_x - 2)
+        if count + 2 > max_y:
+            break
     window.refresh()
 
 
@@ -179,18 +193,32 @@ def update_screen(
     error_window: curses.window,
     status_window: curses.window,
     messages_window: curses.window,
+    stations_window: curses.window,
     status: Status,
 ) -> None:
     update_status(status_window, status)
     update_messages(messages_window, status)
+    update_stations(stations_window, status)
     # update_error should go last so that if updating another window causes an error, it will be
     # displayed
     update_error(error_window, status)
 
 
+def get_launch_site(status: Status) -> AprsMessage:
+    """Return the assumed launch site."""
+    if hasattr(get_launch_site, "launch_site"):
+        return get_launch_site.launch_site  # type: ignore
+    # Assume that the first message from us is the launch site's location
+    for message in status.messages:
+        if CALL_SIGN in message.call_sign:
+            setattr(get_launch_site, "launch_site", message)
+            return message
+    return dummy
+
+
 def curses_main(stdscr) -> None:
-    # main(stdscr, TestReceiver)
-    main(stdscr, MessageReceiver)
+    main(stdscr, TestReceiver)
+    # main(stdscr, MessageReceiver)
 
 
 def main(stdscr, receiver_class) -> None:
@@ -204,14 +232,17 @@ def main(stdscr, receiver_class) -> None:
     status_window_length = 40
     status_window = curses.newwin(STATUS_LABELS_COUNT + 2, status_window_length, 3, 0)
     messages_window = curses.newwin(12, curses.COLS, STATUS_LABELS_COUNT + 5, 0)
+    stations_window = curses.newwin(STATUS_LABELS_COUNT + 2, curses.COLS - status_window_length, 3, status_window_length)
 
     error_window.border()
     status_window.border()
     messages_window.border()
+    stations_window.border()
 
     error_window.refresh()
     status_window.refresh()
     messages_window.refresh()
+    stations_window.refresh()
 
     while True:
         # Wait for a message on this frequency from KE0FZV
@@ -228,7 +259,7 @@ def main(stdscr, receiver_class) -> None:
 
         while (datetime.datetime.now() - start).total_seconds() < timeout_s and not found_call_sign:
             try:
-                update_screen(error_window, status_window, messages_window, status)
+                update_screen(error_window, status_window, messages_window, stations_window, status)
                 data_waiting = parent_pipe.poll(0.5)
                 if data_waiting:
                     csv_message = parent_pipe.recv()
@@ -267,7 +298,7 @@ def main(stdscr, receiver_class) -> None:
                 status.error_timestamp = datetime.datetime.now()
                 break
 
-        update_screen(error_window, status_window, messages_window, status)
+        update_screen(error_window, status_window, messages_window, stations_window, status)
         debug_log("Sending die")
         parent_pipe.send("die")
         debug_log("Calling join")
@@ -332,11 +363,12 @@ class MessageReceiver(multiprocessing.Process):
                 self.pipe.send(line)
 
 
-test_receiver_start = datetime.datetime.now()
 class TestReceiver(multiprocessing.Process):
     def __init__(self, _: int, pipe: multiprocessing.connection.Connection):
         super().__init__()
         self.pipe: multiprocessing.connection.Connection = pipe
+        if not hasattr(TestReceiver, "start_time"):
+            setattr(TestReceiver, "start_time", datetime.datetime.now())
     
     def run(self) -> None:
         while True:
@@ -348,11 +380,9 @@ class TestReceiver(multiprocessing.Process):
             import random
             if random.randint(0, 10) == 0:
                 callsign = f"KE{random.randint(0, 3)}FZV"
-                global test_receiver_start
-                altitude = int((datetime.datetime.now() - test_receiver_start).total_seconds()) + 5280
-                # TODO: This is wrong now, I had to rework stuff to work with Direwolf. It should be
-                # sending a CSV line. Ugh.
-                message = f"{callsign}-11>APZ41N:!4000.00N/10500.00WO302/001/A={altitude:06}/S6T28V2455C00"
+                diff = (datetime.datetime.now() - TestReceiver.start_time)  # type: ignore
+                altitude = int(diff.total_seconds()) + 5280 / FT_PER_M
+                message = f"0,,,{callsign}-11,,,,,APZ41N,O,40.0,105.0,0,180,{altitude},,,,,,,/S6T28V2455C00"
                 self.pipe.send(message)
                 time.sleep(1)
 
@@ -386,7 +416,7 @@ def tail_file(file_name: str) -> str:
         stderr=subprocess.DEVNULL,
     )
     # Mypy thinks this might be None?
-    if process.stdout == None:
+    if process.stdout is None:
         debug_log("tail_file has None process.stdout?")
         return ""
     
