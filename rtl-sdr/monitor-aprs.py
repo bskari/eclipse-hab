@@ -1,5 +1,6 @@
 """Monitors the 2 frequencies for APRS messages."""
 
+import argparse
 import copy
 import csv
 import curses
@@ -16,7 +17,6 @@ import time
 import typing
 
 
-CALL_SIGN = "KE0FZV"
 OFFSET_S = 4 * 60 + 10
 # Balloon status
 STATUS_LABELS_COUNT = 14
@@ -55,6 +55,7 @@ DUMMY_APRS_MESSAGE = AprsMessage(
 
 @dataclasses.dataclass
 class Status:
+    my_call_sign: str
     frequency_hz: int = 144390000
     messages: typing.List[AprsMessage] = dataclasses.field(default_factory=list)
     last_call_sign_timestamp: typing.Optional[datetime.datetime] = None
@@ -69,12 +70,14 @@ class CursesHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
         _, max_x = self.window.getmaxyx()
+        self.window.clear()
+        self.window.border()
         formatted = self.format(record)
         self.window.addnstr(1, 1, formatted, max_x - 2)
         self.window.refresh()
 
 
-def update_status(window, status: Status) -> None:
+def update_status(window: curses.window, status: Status) -> None:
     recent: typing.Optional[AprsMessage] = None
     recent2: typing.Optional[AprsMessage] = None
     recent_rs41: typing.Optional[AprsMessage] = None
@@ -82,7 +85,7 @@ def update_status(window, status: Status) -> None:
 
     for message_index in range(len(status.messages) - 1, -1, -1):
         message = status.messages[message_index]
-        if CALL_SIGN in message.call_sign:
+        if status.my_call_sign in message.call_sign:
             if not recent:
                 recent = message
             elif not recent2:
@@ -123,28 +126,28 @@ def update_status(window, status: Status) -> None:
         temperature_c = int(groups[1])
         battery_v = float(groups[2]) / 1000
     else:
-        status.error = f"Unable to parse comment field {recent_rs41.comment}"
-        status.error_timestamp = datetime.datetime.now()
+        logger.error("Unable to parse comment field %s", recent_rs41.comment)
         satellite_count = 0
         battery_v = 0.0
         temperature_c = 0
 
     window.clear()
     window.border()
-    window.addstr(1, 1, f"Latitude: {msg.latitude_d:.4f}")
-    window.addstr(2, 1, f"Longitude: {msg.longitude_d:.4f}")
-    window.addstr(3, 1, f"Distance: {distance_km:.2f} km, {distance_km * 0.62137119:.2f} mi")
-    window.addstr(4, 1, f"Altitude: {msg.altitude_m:.1f} m, {msg.altitude_m * FT_PER_M:.1f} ft")
-    window.addstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft")
-    window.addstr(6, 1, f"Reported course: {int(msg.course_d)}°")
-    window.addstr(7, 1, f"Computed vert.: {vertical_ms:.1f} m/s, {vertical_ms * FT_PER_M:.1f} ft/s")
-    window.addstr(8, 1, f"Reported horiz.: {reported_horizontal_ms:.1f} m/s, {reported_horizontal_ms * MPH_PER_MPS:.1f} mph")
-    window.addstr(9, 1, f"Computed horiz.: {horizontal_ms:.1f} m/s, {horizontal_ms * MPH_PER_MPS:.1f} mph")
-    window.addstr(10, 1, f"Last seen: {int(seconds_ago)} s ago")
-    window.addstr(11, 1, f"Satellites: {satellite_count}")
-    window.addstr(12, 1, f"Voltage: {battery_v:.3f} V")
-    window.addstr(13, 1, f"Temperature: {temperature_c}°C, {temperature_c * 1.8 + 32:.0f}°F")
-    window.addstr(14, 1, f"Monitoring: {status.frequency_hz} hz")
+    _, max_x = window.getmaxyx()
+    window.addnstr(1, 1, f"Latitude: {msg.latitude_d:.4f}", max_x - 2)
+    window.addnstr(2, 1, f"Longitude: {msg.longitude_d:.4f}", max_x - 2)
+    window.addnstr(3, 1, f"Distance: {distance_km:.2f} km, {distance_km * 0.62137119:.2f} mi", max_x - 2)
+    window.addnstr(4, 1, f"Altitude: {msg.altitude_m:.1f} m, {msg.altitude_m * FT_PER_M:.1f} ft", max_x - 2)
+    window.addnstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft", max_x - 2)
+    window.addnstr(6, 1, f"Reported course: {int(msg.course_d)}°", max_x - 2)
+    window.addnstr(7, 1, f"Computed vert.: {vertical_ms:.1f} m/s, {vertical_ms * FT_PER_M:.1f} ft/s", max_x - 2)
+    window.addnstr(8, 1, f"Reported horiz.: {reported_horizontal_ms:.1f} m/s, {reported_horizontal_ms * MPH_PER_MPS:.1f} mph", max_x - 2)
+    window.addnstr(9, 1, f"Computed horiz.: {horizontal_ms:.1f} m/s, {horizontal_ms * MPH_PER_MPS:.1f} mph", max_x - 2)
+    window.addnstr(10, 1, f"Last seen: {int(seconds_ago)} s ago", max_x - 2)
+    window.addnstr(11, 1, f"Satellites: {satellite_count}", max_x - 2)
+    window.addnstr(12, 1, f"Voltage: {battery_v:.3f} V", max_x - 2)
+    window.addnstr(13, 1, f"Temperature: {temperature_c}°C, {temperature_c * 1.8 + 32:.0f}°F", max_x - 2)
+    window.addnstr(14, 1, f"Monitoring: {status.frequency_hz} hz", max_x - 2)
 
     window.refresh()
 
@@ -166,7 +169,7 @@ def update_messages(window: curses.window, status: Status) -> None:
         msg = status.messages[-message_index - 1]
         timestamp = datetime.datetime.strftime(msg.timestamp, "%H:%M:%S")
         attributes = 0 
-        if CALL_SIGN in msg.call_sign:
+        if status.my_call_sign in msg.call_sign:
             attributes = curses.A_BOLD
         formatted = f"{msg.call_sign} {msg.latitude_d:.4f} {msg.longitude_d:.4f} {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
         whole = f"{timestamp} {formatted}"
@@ -178,6 +181,8 @@ def update_messages(window: curses.window, status: Status) -> None:
 
 def update_stations(window: curses.window, status: Status) -> None:
     """Show the most recent stations received."""
+    window.clear()
+    window.border()
     station_to_message: typing.Dict[str, AprsMessage] = dict()
     for message in status.messages:
         station_to_message[message.call_sign] = message
@@ -188,7 +193,7 @@ def update_stations(window: curses.window, status: Status) -> None:
     for count, msg in enumerate(recents):
         distance_km = distance_m(launch_site.latitude_d, launch_site.longitude_d, msg.latitude_d, msg.longitude_d) / 1000
         seconds = int((now - msg.timestamp).total_seconds())
-        info = f"{msg.call_sign}: {seconds}s ago {msg.latitude_d:.4f} {msg.longitude_d:.4f} {distance_km:.2f}km {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
+        info = f"{msg.call_sign}:{seconds:3}s ago {msg.latitude_d:.4f} {msg.longitude_d:.4f} {distance_km:.2f}km {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
         window.addnstr(1 + count, 1, info, max_x - 2)
         if count + 2 > max_y:
             break
@@ -212,20 +217,14 @@ def get_launch_site(status: Status) -> AprsMessage:
         return get_launch_site.launch_site  # type: ignore
     # Assume that the first message from us is the launch site's location
     for message in status.messages:
-        if CALL_SIGN in message.call_sign:
+        if status.my_call_sign in message.call_sign:
             setattr(get_launch_site, "launch_site", message)
             return message
     return DUMMY_APRS_MESSAGE
 
 
-def curses_main(stdscr) -> None:
-    main(stdscr, TestReceiver)
-    # main(stdscr, MessageReceiver)
-
-
-def main(stdscr, receiver_class) -> None:
-
-    status = Status()
+def main(stdscr, receiver_class, my_call_sign: str) -> None:
+    status = Status(my_call_sign=my_call_sign)
 
     frequencies_hz = (144390000, 432560000)
     timeout_s = 60 * 5
@@ -252,10 +251,10 @@ def main(stdscr, receiver_class) -> None:
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     handler.setLevel(logging.WARN)
     logger.addHandler(handler)
-    handler = logging.FileHandler("debug.log")
-    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    handler.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
+    handler2 = logging.FileHandler("debug.log")
+    handler2.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)s %(message)s"))
+    handler2.setLevel(logging.DEBUG)
+    logger.addHandler(handler2)
 
     while True:
         # Wait for a message on this frequency from my call sign
@@ -264,22 +263,25 @@ def main(stdscr, receiver_class) -> None:
         frequency_hz = frequencies_hz[frequency_index]
         status.frequency_hz = frequency_hz
         parent_pipe, child_pipe = multiprocessing.Pipe()
-        logger.debug(f"Starting a new receiver class {frequency_hz}")
+        logger.info("Monitoring %d", frequency_hz)
         receiver = receiver_class(frequency_hz, child_pipe)
         receiver.start()
-        logger.debug("Started")
         found_call_sign = False
 
         while (datetime.datetime.now() - start).total_seconds() < timeout_s and not found_call_sign:
             try:
                 update_screen(status_window, messages_window, stations_window, status)
+
+                if not receiver.is_alive():
+                    logger.error("Receiver quit unexpectedly")
+                    break
+
                 data_waiting = parent_pipe.poll(0.5)
                 if data_waiting:
                     csv_message = parent_pipe.recv()
                     if not csv_message:
                         continue
-                    logger.debug(f"{csv_message=}")
-                    #parsed = aprslib.parse(raw_message)
+                    logger.info("Received csv message %s", csv_message)
                     field_names = "chan,utime,isotime,source,heard,level,error,dti,name,symbol,latitude,longitude,speed,course,altitude,frequency,offset,tone,system,status,telemetry,comment".split(",")
                     fake_file = io.StringIO(csv_message)
                     reader = csv.DictReader(fake_file, fieldnames=field_names, delimiter=",")
@@ -301,14 +303,13 @@ def main(stdscr, receiver_class) -> None:
                             timestamp=datetime.datetime.now(),
                         )
                     )
-                    if CALL_SIGN in row["source/found"]:
+                    if status.my_call_sign in row["source"]:
                         # Found my message! Let's switch to the other frequency
                         found_call_sign = True
                         break
 
             except Exception as exc:
-                status.error = str(exc)
-                status.error_timestamp = datetime.datetime.now()
+                logger.error(str(exc))
                 break
 
         update_screen(status_window, messages_window, stations_window, status)
@@ -321,11 +322,10 @@ def main(stdscr, receiver_class) -> None:
         frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
         if (datetime.datetime.now() - start).total_seconds() > timeout_s:
-            status.error = "Timed out waiting for message on frequency_hz"
-            status.error_timestamp = datetime.datetime.now()
+            logger.error("Timed out waiting for message on frequency_hz")
 
 
-class MessageReceiver(multiprocessing.Process):
+class AprsReceiver(multiprocessing.Process):
     def __init__(self, frequency_hz: int, pipe: multiprocessing.connection.Connection):
         super().__init__()
         self.frequency_hz: int = frequency_hz
@@ -362,6 +362,10 @@ class MessageReceiver(multiprocessing.Process):
                 direwolf.wait()
                 logger.debug("Done calling terminate and wait")
                 return
+            
+            if rtl_fm.poll():
+                logger.error("rtl_fm quit unexpectedly")
+                return
 
             # I can't figure out how to read the lines from Direwolf that show the parsed messages.
             # I can read from stdin and get the audio level messages, but not the APRS message?
@@ -395,7 +399,8 @@ class TestReceiver(multiprocessing.Process):
                 callsign = f"KE{random.randint(0, 3)}FZV"
                 diff = (datetime.datetime.now() - TestReceiver.start_time)  # type: ignore
                 altitude = int(diff.total_seconds()) + 5280 / FT_PER_M
-                message = f"0,,,{callsign}-11,,,,,APZ41N,O,40.0,105.0,0,180,{altitude},,,,,,,/S6T28V2455C00"
+                comment = "/S6T28V2455C00 " + "".join((random.choice("abcde") for _ in range(random.randint(0, 10))))
+                message = f"0,,,{callsign}-11,,,,,APZ41N,O,40.0,105.0,0,180,{altitude},,,,,,,{comment}"
                 self.pipe.send(message)
                 time.sleep(1)
 
@@ -437,5 +442,30 @@ def tail_file(file_name: str) -> str:
 
 
 if __name__ == "__main__":
-    #print(aprslib.parse("KE0FZV-11>APZ41N:!3959.88N/10513.71WO302/001/A=005326/S6T28V2455C00"))
-    curses.wrapper(curses_main)
+    parser = argparse.ArgumentParser(
+        prog="APRS Monitor",
+        description="Monitors APRS packets for our balloon",
+    )
+    parser.add_argument(
+        "--call-sign",
+        action="store",
+        type=str,
+        dest="call_sign",
+        default="KE0FZV",
+        help="Your callsign",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        default=False,
+        help="Use fake messages instead of using the RTL-SDR, just for testing the display",
+        dest="test",
+    )
+    options = parser.parse_args()
+
+    if options.test:
+        receiver_class = TestReceiver
+    else:
+        receiver_class = AprsReceiver
+    
+    curses.wrapper(lambda stdscr: main(stdscr, receiver_class, options.call_sign))
