@@ -116,13 +116,16 @@ def update_status(window: curses.window, status: Status) -> None:
     seconds = (recent.timestamp - recent2.timestamp).total_seconds()
     vertical_ms = vertical_delta_m / seconds
     estimated_altitude_m = recent.altitude_m + seconds_ago * vertical_ms
+    _, max_x = window.getmaxyx()
     window.move(5, 1)
     window.clrtoeol()
-    _, max_x = window.getmaxyx()
     window.addnstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft", max_x - 2)
     window.move(10, 1)
     window.clrtoeol()
     window.addnstr(10, 1, f"Last seen: {int(seconds_ago)} s ago", max_x - 2)
+    window.move(14, 1)
+    window.clrtoeol()
+    window.addnstr(14, 1, f"Monitoring: {status.frequency_hz} hz", max_x - 2)
     window.border()
 
     # If there's not a new message, then we only need to update the seconds ago and estimates
@@ -283,16 +286,46 @@ def get_launch_site(status: Status) -> AprsMessage:
     return DUMMY_APRS_MESSAGE
 
 
-def main(stdscr: curses.window, receiver_class, my_call_sign: str) -> None:
+def parse_and_save_message(csv_message: str, frequency_hz: int, status: Status) -> str:
+    """Parse and save a message, and return the call sign and SSID."""
+    logger.info("Received csv message %s", csv_message)
+    field_names = "chan,utime,isotime,source,heard,level,error,dti,name,symbol,latitude,longitude,speed,course,altitude,frequency,offset,tone,system,status,telemetry,comment".split(",")
+    fake_file = io.StringIO(csv_message)
+    reader = csv.DictReader(fake_file, fieldnames=field_names, delimiter=",")
+    for _row in reader:
+        row = _row
+
+    status.messages.append(
+        AprsMessage(
+            call_sign=row["source"],
+            altitude_m=float(row["altitude"]),
+            latitude_d=float(row["latitude"]),
+            longitude_d=float(row["longitude"]),
+            course_d=float(row["course"]),
+            horizontal_speed_mps=float(row["speed"]),
+            symbol=row["symbol"],
+            comment=row["comment"],
+            frequency_hz=frequency_hz,
+            timestamp=datetime.datetime.now(),
+        )
+    )
+    return row["source"]
+
+
+def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: int) -> None:
     stdscr.nodelay(True)
     curses.curs_set(False)
     curses.init_pair(1, curses.COLOR_YELLOW, curses.COLOR_BLACK)
 
     status = Status(my_call_sign=my_call_sign)
 
-    frequencies_hz = (144390000, 432560000)
-    timeout_s = 60 * 5
+    # Start listening on RS41 frequency so I can switch over to APRS ASAP
+    frequencies_hz = (432560000, 144390000)
     frequency_index = 0
+    next_expected_rs41_time: typing.Optional[datetime.datetime] = None
+    timeout_s = 60 * 5
+    interval = datetime.timedelta(seconds=interval_s)
+    now = lambda: datetime.datetime.now()
 
     time_window = curses.newwin(3, 10, 0, 0)
     time_window_x = time_window.getmaxyx()[1]
@@ -324,9 +357,11 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str) -> None:
     handler2.setLevel(logging.DEBUG)
     logger.addHandler(handler2)
 
+    logger.debug("Starting")
+
     while True:
         # Wait for a message on this frequency from my call sign
-        start = datetime.datetime.now()
+        start = now()
         status.monitor_start = start
         frequency_hz = frequencies_hz[frequency_index]
         status.frequency_hz = frequency_hz
@@ -334,9 +369,23 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str) -> None:
         logger.info("Monitoring %d", frequency_hz)
         receiver = receiver_class(frequency_hz, child_pipe)
         receiver.start()
-        change_frequency = False
 
-        while (datetime.datetime.now() - start).total_seconds() < timeout_s and not change_frequency:
+        # We want to stay on 144.390 MHz as much as possible, because it's fun to see other people
+        # broadcasting. Therefore, we want to switch frequencies if:
+        # 1) We passed the timeout, or
+        # 2) We're listening on 144.390 MHz and we're getting close to the 433.560 MHz broadcast, or
+        # 3) We're listening on 433.560 MHz but we missed it
+        def passed_timeout():
+            return (now() - start).total_seconds() > timeout_s
+        def approaching_rs41():
+            return frequency_index == 0 and next_expected_rs41_time is not None and (next_expected_rs41_time - now()).total_seconds() < 10
+        def missed_rs41():
+            return frequency_index == 1 and next_expected_rs41_time is not None and (now() - next_expected_rs41_time).total_seconds() > 10
+
+        while (
+            not passed_timeout() and not approaching_rs41() and not missed_rs41()
+        ):
+            # Just keep listening and parsing
             try:
                 update_screen(status_window, messages_window, stations_window, error_window, time_window, status)
 
@@ -349,36 +398,23 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str) -> None:
                     csv_message = parent_pipe.recv()
                     if not csv_message:
                         continue
-                    logger.info("Received csv message %s", csv_message)
-                    field_names = "chan,utime,isotime,source,heard,level,error,dti,name,symbol,latitude,longitude,speed,course,altitude,frequency,offset,tone,system,status,telemetry,comment".split(",")
-                    fake_file = io.StringIO(csv_message)
-                    reader = csv.DictReader(fake_file, fieldnames=field_names, delimiter=",")
-                    for _row in reader:
-                        print(_row)
-                        row = _row
-
-                    status.messages.append(
-                        AprsMessage(
-                            call_sign=row["source"],
-                            altitude_m=float(row["altitude"]),
-                            latitude_d=float(row["latitude"]),
-                            longitude_d=float(row["longitude"]),
-                            course_d=float(row["course"]),
-                            horizontal_speed_mps=float(row["speed"]),
-                            symbol=row["symbol"],
-                            comment=row["comment"],
-                            frequency_hz=frequency_hz,
-                            timestamp=datetime.datetime.now(),
-                        )
-                    )
-                    if status.my_call_sign in row["source"]:
-                        # Found my message! Let's switch to the other frequency
-                        change_frequency = True
-                        break
+                    ssid = parse_and_save_message(csv_message, frequency_hz, status)
+                    if status.my_call_sign in ssid:
+                        # Found my message! If we haven't heard the other frequency yet, then switch
+                        if next_expected_time[frequency_index] is None:
+                            next_expected_time[frequency_index] = now() + interval
+                            logger.debug("Found initial message on %d", frequency_hz)
+                            break
 
             except Exception as exc:
                 logger.error(str(exc))
                 break
+
+        if passed_timeout() or missed_rs41():
+            logger.warning("Timed out waiting for message on %d", frequency_hz)
+            logger.warning("Expected a message at %s", next_expected_rs41_time)
+        elif approaching_rs41():
+            logger.debug("Approaching the RS41 time: %s", next_expected_rs41_time)
 
         update_screen(status_window, messages_window, stations_window, error_window, time_window, status)
         logger.debug("Sending die")
@@ -389,8 +425,10 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str) -> None:
 
         frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
-        if (datetime.datetime.now() - start).total_seconds() > timeout_s:
-            logger.warning("Timed out waiting for message on %d", frequency_hz)
+        # Update the next expected time
+        if next_expected_rs41_time is not None:
+            while next_expected_rs41_time < now():
+                next_expected_rs41_time = next_expected_rs41_time + interval
 
 
 class AprsReceiver(multiprocessing.Process):
@@ -443,9 +481,11 @@ class AprsReceiver(multiprocessing.Process):
             if line == previous_line:
                 continue
 
-            if not line.startswith("chan"):
+            # The first line of the file is a CSV column header, so skip it
+            if not line.startswith("chan,"):
                 # Just send the CSV message and let them deal with it?
                 self.pipe.send(line)
+                previous_line = line
 
 
 class TestReceiver(multiprocessing.Process):
@@ -529,6 +569,15 @@ if __name__ == "__main__":
         dest="launch_site",
     )
     parser.add_argument(
+        "--interval",
+        action="store",
+        help="""The interval in seconds that our two trackers broadcast. The monitor will switch
+between the frequencies to make sure to pick them both up, but will prefer to stay on APRS in order
+to pick up other people.""",
+        dest="interval_s",
+        default=250,
+    )
+    parser.add_argument(
         "--test",
         action="store_true",
         default=False,
@@ -537,11 +586,8 @@ if __name__ == "__main__":
     )
     options = parser.parse_args()
 
-    if options.test:
-        receiver_class = TestReceiver
-    else:
-        receiver_class = AprsReceiver
-    
+    receiver_class = TestReceiver if options.test else AprsReceiver
+
     if options.launch_site:
         lat, long = [float(i) for i in options.launch_site.split(",")]
         if lat < -90 or lat >= 90 or long < -180 or long > 180:
@@ -549,8 +595,8 @@ if __name__ == "__main__":
         launch_site = copy.deepcopy(DUMMY_APRS_MESSAGE)
         launch_site.latitude_d = lat
         launch_site.longitude_d = long
-        get_launch_site.launch_site = launch_site
+        setattr(get_launch_site, "launch_site", launch_site)
 
     curses.wrapper(
-        lambda stdscr: main(stdscr, receiver_class, options.call_sign),
+        lambda stdscr: main(stdscr, receiver_class, options.call_sign, options.interval_s),
     )
