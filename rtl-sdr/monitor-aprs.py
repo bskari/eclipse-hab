@@ -400,7 +400,7 @@ class TestReceiver(multiprocessing.Process):
                 diff = (datetime.datetime.now() - TestReceiver.start_time)  # type: ignore
                 altitude = int(diff.total_seconds()) + 5280 / FT_PER_M
                 comment = "/S6T28V2455C00 " + "".join((random.choice("abcde") for _ in range(random.randint(0, 10))))
-                message = f"0,,,{callsign}-11,,,,,APZ41N,O,40.0,105.0,0,180,{altitude},,,,,,,{comment}"
+                message = f"0,,,{callsign}-11,,,,,APZ41N,O,40.0,-105.0,0,180,{altitude},,,,,,,{comment}"
                 self.pipe.send(message)
                 time.sleep(1)
 
@@ -455,6 +455,12 @@ if __name__ == "__main__":
         help="Your callsign",
     )
     parser.add_argument(
+        "--launch-site",
+        action="store",
+        help="Set the launch site coordinates. Used in distance calculations. Example: '40.000,-105.000'",
+        dest="launch_site",
+    )
+    parser.add_argument(
         "--test",
         action="store_true",
         default=False,
@@ -468,4 +474,15 @@ if __name__ == "__main__":
     else:
         receiver_class = AprsReceiver
     
-    curses.wrapper(lambda stdscr: main(stdscr, receiver_class, options.call_sign))
+    if options.launch_site:
+        lat, long = [float(i) for i in options.launch_site.split(",")]
+        if lat < -90 or lat >= 90 or long < -180 or long > 180:
+            raise ValueError("Bad launch site")
+        launch_site = copy.deepcopy(DUMMY_APRS_MESSAGE)
+        launch_site.latitude_d = lat
+        launch_site.longitude_d = long
+        get_launch_site.launch_site = launch_site
+
+    curses.wrapper(
+        lambda stdscr: main(stdscr, receiver_class, options.call_sign),
+    )
