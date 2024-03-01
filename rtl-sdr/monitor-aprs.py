@@ -77,6 +77,9 @@ class CursesHandler(logging.Handler):
 
 
 def update_status(window: curses.window, status: Status) -> None:
+    if not hasattr(update_status, "recent_id"):
+        setattr(update_status, "recent_id", None)
+
     recent: typing.Optional[AprsMessage] = None
     recent2: typing.Optional[AprsMessage] = None
     recent_rs41: typing.Optional[AprsMessage] = None
@@ -106,18 +109,33 @@ def update_status(window: curses.window, status: Status) -> None:
     if not recent_rs41:
         recent_rs41 = DUMMY_APRS_MESSAGE
 
+    # If there's not a new message, then we only need to update the seconds ago and estimates
     timestamp = recent.timestamp
-    msg = recent
-    msg2 = recent2
-    distance_km = distance_m(msg.latitude_d, msg.longitude_d, launch_site.latitude_d, launch_site.longitude_d) / 1000
-    horizontal_delta_m = distance_m(msg.latitude_d, msg.longitude_d, msg2.latitude_d, msg2.longitude_d)
-    vertical_delta_m = msg.altitude_m - msg2.altitude_m
-    seconds = (recent.timestamp - recent2.timestamp).total_seconds()
-    horizontal_ms = horizontal_delta_m / seconds
-    vertical_ms = vertical_delta_m / seconds
-    reported_horizontal_ms = msg.horizontal_speed_mps * 1000 / 3600
     seconds_ago = (datetime.datetime.now() - timestamp).total_seconds()
-    estimated_altitude_m = msg.altitude_m + seconds_ago * vertical_ms
+    vertical_delta_m = recent.altitude_m - recent2.altitude_m
+    seconds = (recent.timestamp - recent2.timestamp).total_seconds()
+    vertical_ms = vertical_delta_m / seconds
+    estimated_altitude_m = recent.altitude_m + seconds_ago * vertical_ms
+    window.move(5, 1)
+    window.clrtoeol()
+    _, max_x = window.getmaxyx()
+    window.addnstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft", max_x - 2)
+    window.move(10, 1)
+    window.clrtoeol()
+    window.addnstr(10, 1, f"Last seen: {int(seconds_ago)} s ago", max_x - 2)
+    window.border()
+
+    # If there's not a new message, then we only need to update the seconds ago and estimates
+    if update_status.recent_id == id(recent):  # type: ignore
+        window.refresh()
+        return
+
+    update_status.recent_id = id(recent)  # type: ignore
+
+    distance_km = distance_m(recent.latitude_d, recent.longitude_d, launch_site.latitude_d, launch_site.longitude_d) / 1000
+    horizontal_delta_m = distance_m(recent.latitude_d, recent.longitude_d, recent2.latitude_d, recent2.longitude_d)
+    horizontal_ms = horizontal_delta_m / seconds
+    reported_horizontal_ms = recent.horizontal_speed_mps * 1000 / 3600
     match = re.search(r"S(\d+)T(\d+)V(\d+)", recent_rs41.comment)
     if match:
         groups = match.groups()
@@ -132,13 +150,12 @@ def update_status(window: curses.window, status: Status) -> None:
 
     window.clear()
     window.border()
-    _, max_x = window.getmaxyx()
-    window.addnstr(1, 1, f"Latitude: {msg.latitude_d:.4f}", max_x - 2)
-    window.addnstr(2, 1, f"Longitude: {msg.longitude_d:.4f}", max_x - 2)
+    window.addnstr(1, 1, f"Latitude: {recent.latitude_d:.4f}", max_x - 2)
+    window.addnstr(2, 1, f"Longitude: {recent.longitude_d:.4f}", max_x - 2)
     window.addnstr(3, 1, f"Distance: {distance_km:.2f} km, {distance_km * 0.62137119:.2f} mi", max_x - 2)
-    window.addnstr(4, 1, f"Altitude: {msg.altitude_m:.1f} m, {msg.altitude_m * FT_PER_M:.1f} ft", max_x - 2)
+    window.addnstr(4, 1, f"Altitude: {recent.altitude_m:.1f} m, {recent.altitude_m * FT_PER_M:.1f} ft", max_x - 2)
     window.addnstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft", max_x - 2)
-    window.addnstr(6, 1, f"Reported course: {int(msg.course_d)}°", max_x - 2)
+    window.addnstr(6, 1, f"Reported course: {int(recent.course_d)}°", max_x - 2)
     window.addnstr(7, 1, f"Computed vert.: {vertical_ms:.1f} m/s, {vertical_ms * FT_PER_M:.1f} ft/s", max_x - 2)
     window.addnstr(8, 1, f"Reported horiz.: {reported_horizontal_ms:.1f} m/s, {reported_horizontal_ms * MPH_PER_MPS:.1f} mph", max_x - 2)
     window.addnstr(9, 1, f"Computed horiz.: {horizontal_ms:.1f} m/s, {horizontal_ms * MPH_PER_MPS:.1f} mph", max_x - 2)
@@ -167,7 +184,7 @@ def update_messages(window: curses.window, status: Status) -> None:
             break
         msg = status.messages[-message_index - 1]
         timestamp = datetime.datetime.strftime(msg.timestamp, "%H:%M:%S")
-        attributes = 0 
+        attributes = 0
         if status.my_call_sign in msg.call_sign:
             attributes = curses.A_BOLD
         formatted = f"{msg.call_sign} {msg.latitude_d:.4f} {msg.longitude_d:.4f} {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
@@ -413,7 +430,7 @@ class AprsReceiver(multiprocessing.Process):
                 direwolf.wait()
                 logger.debug("Done calling terminate and wait")
                 return
-            
+
             if rtl_fm.poll():
                 logger.error("rtl_fm quit unexpectedly")
                 return
@@ -425,7 +442,7 @@ class AprsReceiver(multiprocessing.Process):
 
             if line == previous_line:
                 continue
-        
+
             if not line.startswith("chan"):
                 # Just send the CSV message and let them deal with it?
                 self.pipe.send(line)
@@ -437,7 +454,7 @@ class TestReceiver(multiprocessing.Process):
         self.pipe: multiprocessing.connection.Connection = pipe
         if not hasattr(TestReceiver, "start_time"):
             setattr(TestReceiver, "start_time", datetime.datetime.now())
-    
+
     def run(self) -> None:
         while True:
             # The other thread will notify us if it's time to shut down
@@ -463,7 +480,7 @@ def distance_m(lat1: float, long1: float, lat2: float, long2: float) -> float:
     long_delta_r = math.radians(long2 - long1);
     a = (
         math.sin(lat_delta_r / 2) ** 2 +
-        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * 
+        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
         math.sin(long_delta_r / 2) * math.sin(long_delta_r / 2)
     )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
@@ -488,7 +505,7 @@ def tail_file(file_name: str) -> str:
     if process.stdout is None:
         logger.debug("tail_file has None process.stdout?")
         return ""
-    
+
     return process.stdout.readline().decode()
 
 
