@@ -69,12 +69,11 @@ class CursesHandler(logging.Handler):
         self.window: curses.window = error_window
 
     def emit(self, record: logging.LogRecord):
-        _, max_x = self.window.getmaxyx()
-        self.window.clear()
-        self.window.border()
         formatted = self.format(record)
-        self.window.addnstr(1, 1, formatted, max_x - 2)
-        self.window.refresh()
+        setattr(update_error, "timestamp", datetime.datetime.now())
+        setattr(update_error, "level", record.levelno)
+        setattr(update_error, "formatted", formatted)
+        update_error(self.window)
 
 
 def update_status(window: curses.window, status: Status) -> None:
@@ -200,15 +199,59 @@ def update_stations(window: curses.window, status: Status) -> None:
     window.refresh()
 
 
+def update_error(window: curses.window) -> None:
+    if hasattr(update_error, "formatted"):
+        level: int = getattr(update_error, "level")
+        timestamp: datetime.datetime = getattr(update_error, "timestamp")
+        formatted: str = getattr(update_error, "formatted")
+    else:
+        return
+
+    attributes = 0
+    seconds_ago = (datetime.datetime.now() - timestamp).total_seconds()
+    fade_s = 60 * 2
+    bold_s = 60
+    if seconds_ago > fade_s + 10:
+        # It's already been updated
+        return
+    if seconds_ago > fade_s:
+        attributes |= curses.A_DIM
+    elif seconds_ago < bold_s:
+        attributes |= curses.A_BOLD
+
+    color_index = 0
+    if seconds_ago <= fade_s and level == logging.ERROR:
+        color_index = 1
+
+    _, max_x = window.getmaxyx()
+    window.clear()
+    window.border()
+    window.addnstr(1, 1, formatted, max_x - 2, attributes | curses.color_pair(color_index))
+    window.refresh()
+
+
+def update_time(window: curses.window) -> None:
+    window.clear()
+    window.border()
+    formatted = datetime.datetime.strftime(datetime.datetime.now(), "%H:%M:%S")
+    _, max_x = window.getmaxyx()
+    window.addnstr(1, 1, formatted, max_x - 2)
+    window.refresh()
+
+
 def update_screen(
     status_window: curses.window,
     messages_window: curses.window,
     stations_window: curses.window,
+    error_window: curses.window,
+    time_window: curses.window,
     status: Status,
 ) -> None:
     update_status(status_window, status)
     update_messages(messages_window, status)
     update_stations(stations_window, status)
+    update_error(error_window)
+    update_time(time_window)
 
 
 def get_launch_site(status: Status) -> AprsMessage:
@@ -223,24 +266,32 @@ def get_launch_site(status: Status) -> AprsMessage:
     return DUMMY_APRS_MESSAGE
 
 
-def main(stdscr, receiver_class, my_call_sign: str) -> None:
+def main(stdscr: curses.window, receiver_class, my_call_sign: str) -> None:
+    stdscr.nodelay(True)
+    curses.curs_set(False)
+    curses.init_pair(1, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
     status = Status(my_call_sign=my_call_sign)
 
     frequencies_hz = (144390000, 432560000)
     timeout_s = 60 * 5
-    frequency_index = 1
+    frequency_index = 0
 
-    error_window = curses.newwin(3, curses.COLS, 0, 0)
+    time_window = curses.newwin(3, 10, 0, 0)
+    time_window_x = time_window.getmaxyx()[1]
+    error_window = curses.newwin(3, curses.COLS - time_window_x, 0, time_window_x)
     status_window_length = 40
     status_window = curses.newwin(STATUS_LABELS_COUNT + 2, status_window_length, 3, 0)
     messages_window = curses.newwin(12, curses.COLS, STATUS_LABELS_COUNT + 5, 0)
     stations_window = curses.newwin(STATUS_LABELS_COUNT + 2, curses.COLS - status_window_length, 3, status_window_length)
 
+    time_window.border()
     error_window.border()
     status_window.border()
     messages_window.border()
     stations_window.border()
 
+    time_window.refresh()
     error_window.refresh()
     status_window.refresh()
     messages_window.refresh()
@@ -266,11 +317,11 @@ def main(stdscr, receiver_class, my_call_sign: str) -> None:
         logger.info("Monitoring %d", frequency_hz)
         receiver = receiver_class(frequency_hz, child_pipe)
         receiver.start()
-        found_call_sign = False
+        change_frequency = False
 
-        while (datetime.datetime.now() - start).total_seconds() < timeout_s and not found_call_sign:
+        while (datetime.datetime.now() - start).total_seconds() < timeout_s and not change_frequency:
             try:
-                update_screen(status_window, messages_window, stations_window, status)
+                update_screen(status_window, messages_window, stations_window, error_window, time_window, status)
 
                 if not receiver.is_alive():
                     logger.error("Receiver quit unexpectedly")
@@ -305,14 +356,14 @@ def main(stdscr, receiver_class, my_call_sign: str) -> None:
                     )
                     if status.my_call_sign in row["source"]:
                         # Found my message! Let's switch to the other frequency
-                        found_call_sign = True
+                        change_frequency = True
                         break
 
             except Exception as exc:
                 logger.error(str(exc))
                 break
 
-        update_screen(status_window, messages_window, stations_window, status)
+        update_screen(status_window, messages_window, stations_window, error_window, time_window, status)
         logger.debug("Sending die")
         parent_pipe.send("die")
         logger.debug("Calling join")
@@ -322,7 +373,7 @@ def main(stdscr, receiver_class, my_call_sign: str) -> None:
         frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
         if (datetime.datetime.now() - start).total_seconds() > timeout_s:
-            logger.error("Timed out waiting for message on frequency_hz")
+            logger.warning("Timed out waiting for message on %d", frequency_hz)
 
 
 class AprsReceiver(multiprocessing.Process):
