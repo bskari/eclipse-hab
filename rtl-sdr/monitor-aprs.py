@@ -1,16 +1,17 @@
 """Monitors the 2 frequencies for APRS messages."""
 
 import argparse
+import aprslib
 import copy
-import csv
 import curses
 import dataclasses
 import datetime
-import io
+import fcntl
 import logging
 import math
 import multiprocessing
 import multiprocessing.connection
+import os
 import re
 import subprocess
 import time
@@ -37,6 +38,7 @@ class AprsMessage:
     comment: str
     frequency_hz: int
     timestamp: datetime.datetime
+    aprs_message: str
 
 
 DUMMY_APRS_MESSAGE = AprsMessage(
@@ -50,6 +52,7 @@ DUMMY_APRS_MESSAGE = AprsMessage(
     comment="/S0T0V0001C00 dummy message",
     frequency_hz=144390000,
     timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
+    aprs_message="",
 )
 
 
@@ -190,8 +193,7 @@ def update_messages(window: curses.window, status: Status) -> None:
         attributes = 0
         if status.my_call_sign in msg.call_sign:
             attributes = curses.A_BOLD
-        formatted = f"{msg.call_sign} {msg.latitude_d:.4f} {msg.longitude_d:.4f} {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
-        whole = f"{timestamp} {formatted}"
+        whole = f"{timestamp} {msg.aprs_message}"
         window.addnstr(message_index + 1, 1, whole, max_x - 2, attributes)
 
     setattr(update_messages, "previous_message_count", len(status.messages))
@@ -212,7 +214,8 @@ def update_stations(window: curses.window, status: Status) -> None:
     for count, msg in enumerate(recents):
         distance_km = distance_m(launch_site.latitude_d, launch_site.longitude_d, msg.latitude_d, msg.longitude_d) / 1000
         seconds = int((now - msg.timestamp).total_seconds())
-        info = f"{msg.call_sign}:{seconds:3}s ago {msg.latitude_d:.4f} {msg.longitude_d:.4f} {distance_km:.2f}km {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
+        ago = f"{seconds // 3600:02}:{(seconds // 60) % 60:02}:{seconds % 60:02}"
+        info = f"{msg.call_sign:8} {ago} ago {msg.latitude_d:.4f} {msg.longitude_d:.4f} {distance_km:.2f}km {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
         window.addnstr(1 + count, 1, info, max_x - 2)
         if count + 2 > max_y:
             break
@@ -286,30 +289,29 @@ def get_launch_site(status: Status) -> AprsMessage:
     return DUMMY_APRS_MESSAGE
 
 
-def parse_and_save_message(csv_message: str, frequency_hz: int, status: Status) -> str:
+def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status) -> str:
     """Parse and save a message, and return the call sign and SSID."""
-    logger.info("Received csv message %s", csv_message)
-    field_names = "chan,utime,isotime,source,heard,level,error,dti,name,symbol,latitude,longitude,speed,course,altitude,frequency,offset,tone,system,status,telemetry,comment".split(",")
-    fake_file = io.StringIO(csv_message)
-    reader = csv.DictReader(fake_file, fieldnames=field_names, delimiter=",")
-    for _row in reader:
-        row = _row
-
+    logger.info("Received APRS message %s", aprs_message)
+    parsed = aprslib.parse(aprs_message)
+    # I guess if speed is 0, aprslib just won't put in the key for it? Ugh
+    speed_mps = float(parsed["speed"]) if "speed" in parsed else 0.0
+    course = float(parsed["course"]) if "course" in parsed else 0.0
     status.messages.append(
         AprsMessage(
-            call_sign=row["source"],
-            altitude_m=float(row["altitude"]),
-            latitude_d=float(row["latitude"]),
-            longitude_d=float(row["longitude"]),
-            course_d=float(row["course"]),
-            horizontal_speed_mps=float(row["speed"]),
-            symbol=row["symbol"],
-            comment=row["comment"],
+            call_sign=parsed["from"],
+            altitude_m=float(parsed["altitude"]),
+            latitude_d=float(parsed["latitude"]),
+            longitude_d=float(parsed["longitude"]),
+            course_d=course,
+            horizontal_speed_mps=speed_mps,
+            symbol=parsed["symbol"],
+            comment=parsed["comment"],
             frequency_hz=frequency_hz,
             timestamp=datetime.datetime.now(),
+            aprs_message=aprs_message,
         )
     )
-    return row["source"]
+    return parsed["from"]
 
 
 def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: int) -> None:
@@ -319,8 +321,9 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: i
 
     status = Status(my_call_sign=my_call_sign)
 
-    # Start listening on RS41 frequency so I can switch over to APRS ASAP
-    frequencies_hz = (432560000, 144390000)
+    RS41_FREQUENCY = 432560000
+    APRS_FREQUENCY = 144390000
+    frequencies_hz = (RS41_FREQUENCY, APRS_FREQUENCY)
     frequency_index = 0
     next_expected_rs41_time: typing.Optional[datetime.datetime] = None
     timeout_s = 60 * 5
@@ -332,7 +335,8 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: i
     error_window = curses.newwin(3, curses.COLS - time_window_x, 0, time_window_x)
     status_window_length = 40
     status_window = curses.newwin(STATUS_LABELS_COUNT + 2, status_window_length, 3, 0)
-    messages_window = curses.newwin(12, curses.COLS, STATUS_LABELS_COUNT + 5, 0)
+    lines = curses.LINES - status_window.getmaxyx()[0] - time_window.getmaxyx()[0]
+    messages_window = curses.newwin(lines, curses.COLS, STATUS_LABELS_COUNT + 5, 0)
     stations_window = curses.newwin(STATUS_LABELS_COUNT + 2, curses.COLS - status_window_length, 3, status_window_length)
 
     time_window.border()
@@ -375,12 +379,12 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: i
         # 1) We passed the timeout, or
         # 2) We're listening on 144.390 MHz and we're getting close to the 433.560 MHz broadcast, or
         # 3) We're listening on 433.560 MHz but we missed it
-        def passed_timeout():
+        def passed_timeout() -> bool:
             return (now() - start).total_seconds() > timeout_s
-        def approaching_rs41():
-            return frequency_index == 0 and next_expected_rs41_time is not None and (next_expected_rs41_time - now()).total_seconds() < 10
-        def missed_rs41():
-            return frequency_index == 1 and next_expected_rs41_time is not None and (now() - next_expected_rs41_time).total_seconds() > 10
+        def approaching_rs41() -> bool:
+            return frequency_hz == APRS_FREQUENCY and next_expected_rs41_time is not None and (next_expected_rs41_time - now()).total_seconds() < 10
+        def missed_rs41() -> bool:
+            return frequency_hz == RS41_FREQUENCY and next_expected_rs41_time is not None and (now() - next_expected_rs41_time).total_seconds() > 10
 
         while (
             not passed_timeout() and not approaching_rs41() and not missed_rs41()
@@ -401,8 +405,8 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: i
                     ssid = parse_and_save_message(csv_message, frequency_hz, status)
                     if status.my_call_sign in ssid:
                         # Found my message! If we haven't heard the other frequency yet, then switch
-                        if next_expected_time[frequency_index] is None:
-                            next_expected_time[frequency_index] = now() + interval
+                        if next_expected_rs41_time is None:
+                            next_expected_rs41_time = now() + interval
                             logger.debug("Found initial message on %d", frequency_hz)
                             break
 
@@ -411,8 +415,11 @@ def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: i
                 break
 
         if passed_timeout() or missed_rs41():
-            logger.warning("Timed out waiting for message on %d", frequency_hz)
-            logger.warning("Expected a message at %s", next_expected_rs41_time)
+            if next_expected_rs41_time:
+                formatted = datetime.datetime.strftime(next_expected_rs41_time, "%H:%M:%S")
+                logger.warning("Timed out waiting for message on %d, expected %s", frequency_hz, formatted)
+            else:
+                logger.warning("Timed out waiting for message on %d", frequency_hz)
         elif approaching_rs41():
             logger.debug("Approaching the RS41 time: %s", next_expected_rs41_time)
 
@@ -449,12 +456,15 @@ class AprsReceiver(multiprocessing.Process):
         direwolf = subprocess.Popen(
             ("direwolf", "-c", "sdr.conf", "-r", "24000", "-D", "1", "-t", "0", "-L", file_name, "-"),
             stdin=rtl_fm.stdout,
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             encoding="utf-8",
         )
 
-        previous_line = tail_file(file_name)
+        # Change it to non-blocking
+        descriptor = fcntl.fcntl(direwolf.stdout, fcntl.F_GETFL)
+        fcntl.fcntl(direwolf.stdout, fcntl.F_SETFL, descriptor | os.O_NONBLOCK)
+
         while True:
             # The other thread will notify us if it's time to shut down
             anything = self.pipe.poll(0.1)
@@ -473,19 +483,14 @@ class AprsReceiver(multiprocessing.Process):
                 logger.error("rtl_fm quit unexpectedly")
                 return
 
-            # I can't figure out how to read the lines from Direwolf that show the parsed messages.
-            # I can read from stdin and get the audio level messages, but not the APRS message?
-            # Doesn't look like it's coming from stderr. So, let's just read from the log file.
-            line = tail_file(file_name)
-
-            if line == previous_line:
+            try:
+                lines = direwolf.stdout.readlines()
+                for line in lines:
+                    if re.match(r"\[\d", line):
+                        aprs_message = " ".join(line.split(" ")[1:])
+                        self.pipe.send(aprs_message)
+            except IOError:
                 continue
-
-            # The first line of the file is a CSV column header, so skip it
-            if not line.startswith("chan,"):
-                # Just send the CSV message and let them deal with it?
-                self.pipe.send(line)
-                previous_line = line
 
 
 class TestReceiver(multiprocessing.Process):
@@ -525,28 +530,6 @@ def distance_m(lat1: float, long1: float, lat2: float, long2: float) -> float:
     )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return radius_m * c
-
-
-def tail_file(file_name: str) -> str:
-    """Returns the last line of a file."""
-    try:
-        with open(file_name, "r"):
-            pass
-    except FileNotFoundError:
-        logger.debug(f"Unable to tail_file {file_name} because not found")
-        return ""
-
-    process = subprocess.Popen(
-        ("tail", "-n", "1", file_name),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
-    # Mypy thinks this might be None?
-    if process.stdout is None:
-        logger.debug("tail_file has None process.stdout?")
-        return ""
-
-    return process.stdout.readline().decode()
 
 
 if __name__ == "__main__":

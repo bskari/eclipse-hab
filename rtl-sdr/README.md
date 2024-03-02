@@ -8,6 +8,14 @@ Need to install `rtl_fm` and `direwolf`.
 
     sudo apt install rtl_fm direwolf
 
+Download the aprslib:
+
+    curl -L -O https://github.com/rossengeorgiev/aprs-python/archive/refs/heads/master.zip
+    unzip master.zip
+    rm master.zip
+    mv aprs-python-master/aprslib/ .
+    rm -rf aprs-python-master
+
 Running
 -------
 
