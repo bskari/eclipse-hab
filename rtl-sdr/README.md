@@ -46,9 +46,11 @@ sign will be assumed as the launch site.
 
 Once you're running the Python monitor, you can have Google Earth display the data and update it
 periodically. Run the Python monitor as above, then in Google Earth, click File -> Add Network Link.
-Name it "Balloon" and in Link, enter "http://localhost:8080". In the Refresh tab, change "Time-Based
-Refresh" to "Periodically" and "30 secs". Enable "Fly to View on Refresh" if you want. It should
-show up in "My Places" under "Balloon". Expand it and enable my call sign.
+Name it "Balloon" and in Link, click Browse and go to the file. In the Refresh tab, change
+"Time-Based Refresh" to "Periodically" and "5 secs". Enable "Fly to View on Refresh" if you want.
+It should show up in "My Places" under "Balloon". Expand it and enable my call sign. If it doesn't
+work, go to Tools -> Options -> General -> KML Content Security and enable "Allow access to local
+files and personal data".
 
 ### Direwolf monitor
 
