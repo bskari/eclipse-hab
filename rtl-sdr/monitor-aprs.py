@@ -1,5 +1,6 @@
 """Monitors the 2 frequencies for APRS messages."""
 
+import aprs_symbols
 import argparse
 import aprslib
 import copy
@@ -15,7 +16,6 @@ import os
 import random
 import re
 import subprocess
-import time
 import typing
 
 
@@ -36,6 +36,7 @@ class AprsMessage:
     course_d: float
     horizontal_speed_mps: float
     symbol: str
+    symbol_table: str
     comment: str
     frequency_hz: int
     timestamp: datetime.datetime
@@ -50,6 +51,7 @@ DUMMY_APRS_MESSAGE = AprsMessage(
     course_d=0.0,
     horizontal_speed_mps=0.0,
     symbol="O",
+    symbol_table="/",
     comment="/S0T0V0001C00 dummy message",
     frequency_hz=144390000,
     timestamp=datetime.datetime.now() - datetime.timedelta(seconds=60 * 60 * 24),
@@ -223,8 +225,10 @@ def update_stations(window: curses.window, status: Status) -> None:
         distance_km = distance_m(launch_site.latitude_d, launch_site.longitude_d, msg.latitude_d, msg.longitude_d) / 1000
         seconds = int((now - msg.timestamp).total_seconds())
         ago = f"{seconds // 3600:02}:{(seconds // 60) % 60:02}:{seconds % 60:02}"
-        info = f"{msg.call_sign:9} {ago} ago {msg.latitude_d:8.4f} {msg.longitude_d:9.4f} {distance_km:7.2f}km {msg.altitude_m:7.1f}m {msg.symbol} {msg.comment}"
-        window.addnstr(1 + count, 1, info, max_x - 2)
+        unicode_symbol = aprs_symbols.get_symbol(msg.symbol_table, msg.symbol)
+        info = f"{msg.call_sign:9} {ago} ago {msg.latitude_d:8.4f} {msg.longitude_d:9.4f} {distance_km:7.2f}km {msg.altitude_m:7.1f}m {unicode_symbol} {msg.comment}"
+        # Do max_x - 3 instead of max_x - 2 because Unicode emojis are not the same size
+        window.addnstr(1 + count, 1, info, max_x - 3)
         if count + 2 > max_y:
             break
     window.refresh()
@@ -321,6 +325,7 @@ def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status)
             course_d=get("course", float),
             horizontal_speed_mps=get("speed", float),
             symbol=get("symbol", str),
+            symbol_table=get("symbol_table", str),
             comment=get("comment", str),
             frequency_hz=frequency_hz,
             timestamp=datetime.datetime.now(),
@@ -529,8 +534,8 @@ class TestReceiver(multiprocessing.Process):
         next = datetime.datetime.now() + datetime.timedelta(seconds=random.randint(1, 4))
 
         messages = (
-            "KE0FZV-11>APZ41N:!3959.88N/10513.69WO111/000/A=005352/S11T34V2317C00",
-            "KE0FZV-11>APRS:/222200h4001.14N/10516.61WO000/000/A=005409 Tracksoar",
+            "KE0FZV-11>APZ41N:!4000.00N/10500.00WO111/000/A=005280/S11T34V2317C00",
+            "KE0FZV-11>APRS:/222200h4000.00N/10500.00WO000/000/A=005280 Tracksoar",
             "N2XGL-9>S9UYQU,WIDE1-1,WIDE2-1:`q)up7@>/`\"E{}_1\x0d",
             "W0RMT-9>SYUYRP,WIDE1-1,WIDE2-1:`q&7p,bk/`\"Fv}_4\x0d",
             "W0RMT-9>SYUYQW,WIDE1-1,WIDE2-1:`q(cohbk/`\"G$}_4<\x0d",
@@ -557,8 +562,8 @@ class TestReceiver(multiprocessing.Process):
                 next = datetime.datetime.now() + datetime.timedelta(seconds=random.randint(1, 4))
                 message = random.choice(messages)
                 diff = (datetime.datetime.now() - TestReceiver.start_time)  # type: ignore
-                altitude = int((diff.total_seconds() + 5280) / FT_PER_M)
-                message = re.sub(r"A=\d+", f"A={altitude}", message)
+                altitude = int(diff.total_seconds() + 5280)
+                message = re.sub(r"A=\d+", f"A={int(altitude):06}", message)
                 self.pipe.send(message)
 
 
@@ -577,6 +582,7 @@ def distance_m(lat1: float, long1: float, lat2: float, long2: float) -> float:
 
 
 if __name__ == "__main__":
+    print(aprslib.parse("KE0FZV-11>APZ41N:!4000.00N/10500.00WO111/000/A=005280/S11T34V2317C00"))
     parser = argparse.ArgumentParser(
         prog="APRS Monitor",
         description="Monitors APRS packets for our balloon",
