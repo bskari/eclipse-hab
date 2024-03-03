@@ -136,7 +136,9 @@ def update_status(window: curses.window, status: Status) -> None:
     window.addnstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft", max_x - 2)
     window.move(10, 1)
     window.clrtoeol()
-    window.addnstr(10, 1, f"Last seen: {int(seconds_ago)} s ago", max_x - 2)
+    isecs = int(seconds_ago)
+    ago = f"{isecs // 3600:02}:{(isecs // 60) % 60:02}:{isecs % 60:02}"
+    window.addnstr(10, 1, f"Last seen: {ago} ago", max_x - 2)
     window.move(14, 1)
     window.clrtoeol()
     window.addnstr(14, 1, f"Monitoring: {status.frequency_hz} hz", max_x - 2)
@@ -144,7 +146,7 @@ def update_status(window: curses.window, status: Status) -> None:
 
     # If there's not a new message, then we only need to update the seconds ago and estimates
     if update_status.recent_id == id(recent):  # type: ignore
-        window.refresh()
+        window.noutrefresh()
         return
 
     update_status.recent_id = id(recent)  # type: ignore
@@ -180,13 +182,14 @@ def update_status(window: curses.window, status: Status) -> None:
     window.addnstr(7, 1, f"Computed vert.: {vertical_ms:.1f} m/s, {vertical_ms * FT_PER_M:.1f} ft/s", max_x - 2)
     window.addnstr(8, 1, f"Reported horiz.: {reported_horizontal_ms:.1f} m/s, {reported_horizontal_ms * MPH_PER_MPS:.1f} mph", max_x - 2)
     window.addnstr(9, 1, f"Computed horiz.: {horizontal_ms:.1f} m/s, {horizontal_ms * MPH_PER_MPS:.1f} mph", max_x - 2)
-    window.addnstr(10, 1, f"Last seen: {int(seconds_ago)} s ago", max_x - 2)
+    ago = f"{isecs // 3600:02}:{(isecs // 60) % 60:02}:{isecs % 60:02}"
+    window.addnstr(10, 1, f"Last seen: {ago} ago", max_x - 2)
     window.addnstr(11, 1, f"Satellites: {satellite_count}", max_x - 2)
     window.addnstr(12, 1, f"Voltage: {battery_v:.3f} V", max_x - 2)
     window.addnstr(13, 1, f"Temperature: {temperature_c}°C, {temperature_c * 1.8 + 32:.0f}°F", max_x - 2)
     window.addnstr(14, 1, f"Monitoring: {status.frequency_hz} hz", max_x - 2)
 
-    window.refresh()
+    window.noutrefresh()
 
 
 def update_messages(window: curses.window, status: Status) -> None:
@@ -212,7 +215,7 @@ def update_messages(window: curses.window, status: Status) -> None:
         window.addnstr(message_index + 1, 1, whole, max_x - 2, attributes)
 
     setattr(update_messages, "previous_message_count", len(status.messages))
-    window.refresh()
+    window.noutrefresh()
 
 
 def update_stations(window: curses.window, status: Status) -> None:
@@ -236,7 +239,7 @@ def update_stations(window: curses.window, status: Status) -> None:
         window.addnstr(1 + count, 1, info, max_x - 3)
         if count + 2 > max_y:
             break
-    window.refresh()
+    window.noutrefresh()
 
 
 def update_error(window: curses.window) -> None:
@@ -267,16 +270,14 @@ def update_error(window: curses.window) -> None:
     window.clear()
     window.border()
     window.addnstr(1, 1, formatted, max_x - 2, attributes | curses.color_pair(color_index))
-    window.refresh()
+    window.noutrefresh()
 
 
 def update_time(window: curses.window) -> None:
-    window.clear()
-    window.border()
     formatted = datetime.datetime.strftime(datetime.datetime.now(), "%H:%M:%S")
     _, max_x = window.getmaxyx()
     window.addnstr(1, 1, formatted, max_x - 2)
-    window.refresh()
+    window.noutrefresh()
 
 
 def update_screen(
@@ -292,6 +293,7 @@ def update_screen(
     update_stations(stations_window, status)
     update_error(error_window)
     update_time(time_window)
+    curses.doupdate()
 
 
 def get_launch_site(status: Status) -> AprsMessage:
@@ -443,7 +445,7 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
                         if next_expected_rs41_time is None:
                             next_expected_rs41_time = now() + interval
                             logger.debug("Found initial message on %d", frequency_hz)
-                            break
+                        break
 
             except Exception as exc:
                 logger.error(str(exc))
