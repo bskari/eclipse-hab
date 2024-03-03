@@ -29,12 +29,23 @@ messages, left is the most recent status received from the balloon, right is
 the most recent received status for each station we've recently heard, and
 bottom is each raw message as it is received.
 
-Run
+You can also specify your call sign:
+
+    --call-sign KE0FZV
+
+and your position:
+
+    --launch-site 40.0000,-105.0000
+
+If you don't provide a launch site, the first packet it hears from your call
+sign will be assumed as the launch site.
+
+To listen to the APRS stream through the speakers of the computer, run
 
     ./play-aprs.sh
 
-to listen to the APRS stream through the speakers of the computer. If you're
-picking up the TrackSoar from your RTL-SDR, you should be able to hear it.
+If you're picking up the TrackSoar from your RTL-SDR, you should be able to
+hear it.
 
 To try to decode the APRS messages from the Tracksoar, run
 
