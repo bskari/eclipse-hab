@@ -1,5 +1,6 @@
 """Monitors the 2 frequencies for APRS messages."""
 
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import aprs_symbols
 import argparse
 import aprslib
@@ -16,6 +17,7 @@ import os
 import random
 import re
 import subprocess
+import threading
 import typing
 
 
@@ -25,7 +27,7 @@ STATUS_LABELS_COUNT = 14
 FT_PER_M = 3.2808399
 MPH_PER_MPS = 2.2369363
 
-logger = logging.getLogger()
+logger = logging.getLogger(__file__)
 
 @dataclasses.dataclass
 class AprsMessage:
@@ -296,6 +298,42 @@ def update_screen(
     curses.doupdate()
 
 
+def report_to_google_earth(status: Status) -> None:
+    with open("balloon.kml", "w") as file:
+        file.write(f"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Paths</name>
+    <description>Examples of paths. Note that the tessellate tag is by default
+      set to 0. If you want to create tessellated lines, they must be authored
+      (or edited) directly in KML.</description>
+    <Placemark>
+      <name>{status.my_call_sign}</name>
+      <description>KE0FZV weather balloon</description>
+      <Style>
+        <LineStyle>
+          <color>7f00ffff</color>
+          <width>4</width>
+        </LineStyle>
+        <PolyStyle>
+          <color>7f00ff00</color>
+        </PolyStyle>
+      </Style>
+      <LineString>
+        <extrude>1</extrude>
+        <tessellate>1</tessellate>
+        <altitudeMode>absolute</altitudeMode>
+        <coordinates>\n""")
+        for message in status.messages:
+            if status.my_call_sign in message.call_sign:
+                file.write(f"{message.longitude_d},{message.latitude_d},{message.altitude_m}\n")
+        file.write("""        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>""")
+
+
 def get_launch_site(status: Status) -> AprsMessage:
     """Return the assumed launch site."""
     if hasattr(get_launch_site, "launch_site"):
@@ -436,19 +474,25 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
 
                 data_waiting = parent_pipe.poll(0.5)
                 if data_waiting:
-                    csv_message = parent_pipe.recv()
-                    if not csv_message:
+                    aprs_message = parent_pipe.recv()
+                    if not aprs_message:
                         continue
-                    ssid = parse_and_save_message(csv_message, frequency_hz, status)
+                    ssid = parse_and_save_message(aprs_message, frequency_hz, status)
                     if status.my_call_sign in ssid:
+                        # Report to Google Earth
+                        try:
+                            report_to_google_earth(status)
+                        except Exception as exc:
+                            logger.debug("Couldn't write to ttyS0", exc_info=exc)
+
                         # Found my message! If we haven't heard the other frequency yet, then switch
                         if next_expected_rs41_time is None:
                             next_expected_rs41_time = now() + interval
                             logger.debug("Found initial message on %d", frequency_hz)
-                        break
+                            break
 
             except Exception as exc:
-                logger.error(str(exc))
+                logger.error(str(exc), exc_info=exc)
                 break
 
         if passed_timeout() or missed_rs41():
@@ -530,15 +574,14 @@ class AprsReceiver(multiprocessing.Process):
                 continue
 
 
+test_receiver_start_time = datetime.datetime.now()
 class TestReceiver(multiprocessing.Process):
     def __init__(self, _: int, pipe: multiprocessing.connection.Connection):
         super().__init__()
         self.pipe: multiprocessing.connection.Connection = pipe
-        if not hasattr(TestReceiver, "start_time"):
-            setattr(TestReceiver, "start_time", datetime.datetime.now())
 
     def run(self) -> None:
-        next = datetime.datetime.now() + datetime.timedelta(seconds=random.randint(1, 4))
+        next = datetime.datetime.now() + datetime.timedelta(seconds=random.randint(1, 10))
 
         messages = (
             "KE0FZV-11>APZ41N:!4000.00N/10500.00WO111/000/A=005280/S11T34V2317C00",
@@ -568,9 +611,12 @@ class TestReceiver(multiprocessing.Process):
             if datetime.datetime.now() > next:
                 next = datetime.datetime.now() + datetime.timedelta(seconds=random.randint(1, 4))
                 message = random.choice(messages)
-                diff = (datetime.datetime.now() - TestReceiver.start_time)  # type: ignore
-                altitude = int(diff.total_seconds() + 5280)
+                global test_receiver_start_time
+                diff = (datetime.datetime.now() - test_receiver_start_time)  # type: ignore
+                altitude = int(diff.total_seconds() * 10 + 5280)
                 message = re.sub(r"A=\d+", f"A={int(altitude):06}", message)
+                longitude_d = 105 - diff.total_seconds() / 20000
+                message = re.sub(r"10500.00", long_to_d_m_fm(longitude_d), message)
                 self.pipe.send(message)
 
 
@@ -588,8 +634,30 @@ def distance_m(lat1: float, long1: float, lat2: float, long2: float) -> float:
     return radius_m * c
 
 
+def long_to_d_m_fm(degrees: float) -> str:
+    """Converts to DDDMM.MM format."""
+    minutes = (degrees - int(degrees)) * 60
+    return f"{int(degrees)}{minutes:05.2f}"
+
+
+def start_webserver() -> None:
+    class MyServer(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "* application/vnd.google-earth.kml+xml")
+            self.end_headers()
+            with open("balloon.kml", "r") as file:
+                self.wfile.write(file.read().encode())
+
+    def run_webserver():
+        webServer = HTTPServer(("localhost", 8080), MyServer)
+        webServer.serve_forever()
+
+    t = threading.Thread(target=run_webserver, args=[])
+    t.run()
+
+
 if __name__ == "__main__":
-    print(aprslib.parse("KE0FZV-11>APZ41N:!4000.00N/10500.00WO111/000/A=005280/S11T34V2317C00"))
     parser = argparse.ArgumentParser(
         prog="APRS Monitor",
         description="Monitors APRS packets for our balloon",
@@ -649,6 +717,15 @@ to pick up other people.""",
         interval_s=parser_options.interval_s,
         aprs_only=parser_options.aprs_only,
     )
+
+    class MyServer(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "* application/vnd.google-earth.kml+xml")
+            self.end_headers()
+            with open("balloon.kml", "r") as file:
+                self.wfile.write(file.read().encode())
+
 
     curses.wrapper(
         lambda stdscr: main(stdscr, receiver_class, options),
