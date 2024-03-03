@@ -12,6 +12,7 @@ import math
 import multiprocessing
 import multiprocessing.connection
 import os
+import random
 import re
 import subprocess
 import time
@@ -222,7 +223,7 @@ def update_stations(window: curses.window, status: Status) -> None:
         distance_km = distance_m(launch_site.latitude_d, launch_site.longitude_d, msg.latitude_d, msg.longitude_d) / 1000
         seconds = int((now - msg.timestamp).total_seconds())
         ago = f"{seconds // 3600:02}:{(seconds // 60) % 60:02}:{seconds % 60:02}"
-        info = f"{msg.call_sign:8} {ago} ago {msg.latitude_d:.4f} {msg.longitude_d:.4f} {distance_km:.2f}km {msg.altitude_m:.1f}m {msg.symbol} {msg.comment}"
+        info = f"{msg.call_sign:9} {ago} ago {msg.latitude_d:8.4f} {msg.longitude_d:9.4f} {distance_km:7.2f}km {msg.altitude_m:7.1f}m {msg.symbol} {msg.comment}"
         window.addnstr(1 + count, 1, info, max_x - 2)
         if count + 2 > max_y:
             break
@@ -525,21 +526,40 @@ class TestReceiver(multiprocessing.Process):
             setattr(TestReceiver, "start_time", datetime.datetime.now())
 
     def run(self) -> None:
+        next = datetime.datetime.now() + datetime.timedelta(seconds=random.randint(1, 4))
+
+        messages = (
+            "KE0FZV-11>APZ41N:!3959.88N/10513.69WO111/000/A=005352/S11T34V2317C00",
+            "KE0FZV-11>APRS:/222200h4001.14N/10516.61WO000/000/A=005409 Tracksoar",
+            "N2XGL-9>S9UYQU,WIDE1-1,WIDE2-1:`q)up7@>/`\"E{}_1\x0d",
+            "W0RMT-9>SYUYRP,WIDE1-1,WIDE2-1:`q&7p,bk/`\"Fv}_4\x0d",
+            "W0RMT-9>SYUYQW,WIDE1-1,WIDE2-1:`q(cohbk/`\"G$}_4<\x0d",
+            "W0RMT-9>SYUXSQ,WIDE1-1,WIDE2-1:`q*OlS\x1ek/`\"F`}145.310MHz email@gmail.com_4\x0d",
+            "KB0TVJ-1>APJYC1,WIDE1-1:@215644h4003.25NI10512.42W&144.390MHz TOFF /A=5190 email@gmail.com\x0d",
+            "KB0TVJ-1>APJYC1,WIDE1-1,WIDE2-1:@221244h4003.25NI10512.42W&144.390MHz TOFF /A=5190 email@gmail.com\x0d",
+            "W0SKY-1>APDW17:;449.750  *111111z3947.30N/10518.19Wr449.750MHz Toff -500 DMR TS1 TG310847 SKYHUBLINK.COM",
+            "W0JJG-9>3Y5SQZ,WIDE1-1,WIDE2-1:`q[0mTRk/`\"Ep}_%\x0d",
+            "W7JPJ-9>SYSXSV,K5RHD-10,WIDE1*:`pH1l#%j/`\"G=}_%\x0d",
+            "W0SKY-1>APDW17:;447.425  *111111z4027.08N/10645.12Wr447.425MHz -500 N2SKY YSF DIGITAL SKYHUBLINK.COM",
+            "W0SKY-1>APDW17:;447.400  *111111z4118.63N/10527.18Wr447.400MHz -500 KE0DNL WIRES-X SKYHUBLINK.COM",
+        )
+
+        # Always start with my message, just for display purposes
+        self.pipe.send(messages[0])
+
         while True:
             # The other thread will notify us if it's time to shut down
             anything = self.pipe.poll(0.1)
             if anything:
                 return
-
-            import random
-            if random.randint(0, 10) == 0:
-                callsign = f"KE{random.randint(0, 3)}FZV"
+            
+            if datetime.datetime.now() > next:
+                next = datetime.datetime.now() + datetime.timedelta(seconds=random.randint(1, 4))
+                message = random.choice(messages)
                 diff = (datetime.datetime.now() - TestReceiver.start_time)  # type: ignore
-                altitude = int(diff.total_seconds()) + 5280 / FT_PER_M
-                comment = "/S6T28V2455C00 " + "".join((random.choice("abcde") for _ in range(random.randint(0, 10))))
-                message = f"0,,,{callsign}-11,,,,,APZ41N,O,40.0,-105.0,0,180,{altitude},,,,,,,{comment}"
+                altitude = int((diff.total_seconds() + 5280) / FT_PER_M)
+                message = re.sub(r"A=\d+", f"A={altitude}", message)
                 self.pipe.send(message)
-                time.sleep(1)
 
 
 def distance_m(lat1: float, long1: float, lat2: float, long2: float) -> float:
