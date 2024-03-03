@@ -67,7 +67,7 @@ class Status:
     last_call_sign_timestamp: typing.Optional[datetime.datetime] = None
     monitor_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
     overall_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
-    falling: False
+    falling: bool = False
 
 
 @dataclasses.dataclass
