@@ -21,7 +21,7 @@ Running
 
 Run
 
-    python monitor-aprs.py
+    python monitor_aprs.py
 
 And it will start a nice interface showing recently received packets from the
 weather balloon. The upper left has a clock, top is a line for error or warning
