@@ -66,6 +66,13 @@ class Status:
     overall_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
 
 
+@dataclasses.dataclass
+class Options:
+    call_sign: str
+    interval_s: float
+    aprs_only: bool
+
+
 class CursesHandler(logging.Handler):
     def __init__(self, error_window: curses.window):
         super().__init__()
@@ -294,18 +301,26 @@ def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status)
     logger.info("Received APRS message %s", aprs_message)
     parsed = aprslib.parse(aprs_message)
     # I guess if speed is 0, aprslib just won't put in the key for it? Ugh
-    speed_mps = float(parsed["speed"]) if "speed" in parsed else 0.0
-    course = float(parsed["course"]) if "course" in parsed else 0.0
+    def get(key: str, type_):
+        if key in parsed:
+            return type_(parsed[key])
+        if type_ == float:
+            return 0.0
+        if type_ == str:
+            return ""
+        logger.warning("Unknown type in parse_and_save_message: %s", type_)
+        return ""
+
     status.messages.append(
         AprsMessage(
-            call_sign=parsed["from"],
-            altitude_m=float(parsed["altitude"]),
-            latitude_d=float(parsed["latitude"]),
-            longitude_d=float(parsed["longitude"]),
-            course_d=course,
-            horizontal_speed_mps=speed_mps,
-            symbol=parsed["symbol"],
-            comment=parsed["comment"],
+            call_sign=get("from", str),
+            altitude_m=get("altitude", float),
+            latitude_d=get("latitude", float),
+            longitude_d=get("longitude", float),
+            course_d=get("course", float),
+            horizontal_speed_mps=get("speed", float),
+            symbol=get("symbol", str),
+            comment=get("comment", str),
             frequency_hz=frequency_hz,
             timestamp=datetime.datetime.now(),
             aprs_message=aprs_message,
@@ -314,16 +329,25 @@ def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status)
     return parsed["from"]
 
 
-def main(stdscr: curses.window, receiver_class, my_call_sign: str, interval_s: int) -> None:
+def main(stdscr: curses.window, receiver_class, options: Options) -> None:
     stdscr.nodelay(True)
     curses.curs_set(False)
     curses.init_pair(1, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
+    my_call_sign = options.call_sign
+    interval_s = options.interval_s
 
     status = Status(my_call_sign=my_call_sign)
 
     RS41_FREQUENCY = 432560000
     APRS_FREQUENCY = 144390000
-    frequencies_hz = (RS41_FREQUENCY, APRS_FREQUENCY)
+
+    frequencies_hz: typing.Iterable[int]
+    if options.aprs_only:
+        frequencies_hz  = (APRS_FREQUENCY,)
+    else:
+        frequencies_hz = (RS41_FREQUENCY, APRS_FREQUENCY)
+
     frequency_index = 0
     next_expected_rs41_time: typing.Optional[datetime.datetime] = None
     timeout_s = 60 * 5
@@ -561,18 +585,25 @@ to pick up other people.""",
         default=250,
     )
     parser.add_argument(
+        "--aprs-only",
+        action="store_true",
+        default=False,
+        help="Only monitor the APRS frequency, skip the RS41.",
+        dest="aprs_only",
+    )
+    parser.add_argument(
         "--test",
         action="store_true",
         default=False,
         help="Use fake messages instead of using the RTL-SDR, just for testing the display",
         dest="test",
     )
-    options = parser.parse_args()
+    parser_options = parser.parse_args()
 
-    receiver_class = TestReceiver if options.test else AprsReceiver
+    receiver_class = TestReceiver if parser_options.test else AprsReceiver
 
-    if options.launch_site:
-        lat, long = [float(i) for i in options.launch_site.split(",")]
+    if parser_options.launch_site:
+        lat, long = [float(i) for i in parser_options.launch_site.split(",")]
         if lat < -90 or lat >= 90 or long < -180 or long > 180:
             raise ValueError("Bad launch site")
         launch_site = copy.deepcopy(DUMMY_APRS_MESSAGE)
@@ -580,6 +611,12 @@ to pick up other people.""",
         launch_site.longitude_d = long
         setattr(get_launch_site, "launch_site", launch_site)
 
+    options = Options(
+        call_sign=parser_options.call_sign,
+        interval_s=parser_options.interval_s,
+        aprs_only=parser_options.aprs_only,
+    )
+
     curses.wrapper(
-        lambda stdscr: main(stdscr, receiver_class, options.call_sign, options.interval_s),
+        lambda stdscr: main(stdscr, receiver_class, options),
     )
