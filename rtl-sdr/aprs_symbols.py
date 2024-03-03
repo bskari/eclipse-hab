@@ -14,7 +14,7 @@ def get_symbol(table: str, symbol: str) -> str:
   
 PRIMARY_TABLE = {
     "!": "🚓",
-    "#": "📛",
+    "#": "✡",  # Digipeater
     "$": "📞",
     "'": "🛩",
     "-": "🏠",
@@ -50,7 +50,7 @@ PRIMARY_TABLE = {
 }
 
 ALTERNATE_TABLE = {
-  "#": "📛",
+  "#": "✡",
   "-": "🏠",
   ".": "?",
   "0": "⊙",

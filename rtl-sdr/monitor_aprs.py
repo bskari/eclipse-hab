@@ -67,6 +67,7 @@ class Status:
     last_call_sign_timestamp: typing.Optional[datetime.datetime] = None
     monitor_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
     overall_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
+    falling: False
 
 
 @dataclasses.dataclass
@@ -164,6 +165,10 @@ def update_status(window: curses.window, status: Status) -> None:
         battery_v = 0.0
         temperature_c = 0
 
+    if vertical_ms < -2.0 and recent.altitude_m > 3000 and not status.falling:
+        status.falling = True
+        logger.critical("Payload is falling!")
+
     window.clear()
     window.border()
     window.addnstr(1, 1, f"Latitude: {recent.latitude_d:.4f}", max_x - 2)
@@ -255,7 +260,7 @@ def update_error(window: curses.window) -> None:
         attributes |= curses.A_BOLD
 
     color_index = 0
-    if seconds_ago <= fade_s and level == logging.ERROR:
+    if seconds_ago <= fade_s and level in (logging.ERROR, logging.CRITICAL):
         color_index = 1
 
     _, max_x = window.getmaxyx()
