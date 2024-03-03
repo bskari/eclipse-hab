@@ -402,6 +402,9 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
     frequency_index = 0
     next_expected_rs41_time: typing.Optional[datetime.datetime] = None
     timeout_s = 60 * 5
+    # Window on both sides. i.e., seconds before to switch to listen to RS41, seconds after expected
+    # to assume we missed it
+    rs41_window_s = 10
     interval = datetime.timedelta(seconds=interval_s)
     now = lambda: datetime.datetime.now()
 
@@ -457,9 +460,9 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
         def passed_timeout() -> bool:
             return (now() - start).total_seconds() > timeout_s
         def approaching_rs41() -> bool:
-            return frequency_hz == APRS_FREQUENCY and next_expected_rs41_time is not None and (next_expected_rs41_time - now()).total_seconds() < 10
+            return frequency_hz == APRS_FREQUENCY and next_expected_rs41_time is not None and (next_expected_rs41_time - now()).total_seconds() < rs41_window_s
         def missed_rs41() -> bool:
-            return frequency_hz == RS41_FREQUENCY and next_expected_rs41_time is not None and (now() - next_expected_rs41_time).total_seconds() > 10
+            return frequency_hz == RS41_FREQUENCY and next_expected_rs41_time is not None and (now() - next_expected_rs41_time).total_seconds() > rs41_window_s
 
         while (
             not passed_timeout() and not approaching_rs41() and not missed_rs41()
@@ -485,10 +488,11 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
                         except Exception as exc:
                             logger.debug("Couldn't write to ttyS0", exc_info=exc)
 
-                        # Found my message! If we haven't heard the other frequency yet, then switch
-                        if next_expected_rs41_time is None:
-                            next_expected_rs41_time = now() + interval
-                            logger.debug("Found initial message on %d", frequency_hz)
+                        # If we're on RS41 and found my message, then switch back to APRS
+                        if frequency_hz == RS41_FREQUENCY:
+                            if next_expected_rs41_time is None:
+                                next_expected_rs41_time = now() + interval
+                                logger.debug("Found initial message on %d", frequency_hz)
                             break
 
             except Exception as exc:
@@ -502,21 +506,25 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
             else:
                 logger.warning("Timed out waiting for message on %d", frequency_hz)
         elif approaching_rs41():
-            logger.debug("Approaching the RS41 time: %s", next_expected_rs41_time)
+            if next_expected_rs41_time is not None:
+                formatted = datetime.datetime.strftime(next_expected_rs41_time, "%H:%M:%S")
+            else:
+                formatted = "(none)"
+            logger.debug("Approaching the RS41 time: %s", formatted)
 
         update_screen(status_window, messages_window, stations_window, error_window, time_window, status)
-        logger.debug("Sending die")
+        logger.debug("Killing monitor")
         parent_pipe.send("die")
-        logger.debug("Calling join")
         receiver.join()
-        logger.debug("Joined")
-
-        frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
         # Update the next expected time
         if next_expected_rs41_time is not None:
-            while next_expected_rs41_time < now():
+            while next_expected_rs41_time < now() + datetime.timedelta(seconds=rs41_window_s):
                 next_expected_rs41_time = next_expected_rs41_time + interval
+            formatted = datetime.datetime.strftime(next_expected_rs41_time, "%H:%M:%S")
+            logger.debug("Next expected RS41 time is %s", formatted)
+
+        frequency_index = (frequency_index + 1) % len(frequencies_hz)
 
 
 class AprsReceiver(multiprocessing.Process):
@@ -599,9 +607,6 @@ class TestReceiver(multiprocessing.Process):
             "W0SKY-1>APDW17:;447.400  *111111z4118.63N/10527.18Wr447.400MHz -500 KE0DNL WIRES-X SKYHUBLINK.COM",
         )
 
-        # Always start with my message, just for display purposes
-        self.pipe.send(messages[0])
-
         while True:
             # The other thread will notify us if it's time to shut down
             anything = self.pipe.poll(0.1)
@@ -679,6 +684,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval",
         action="store",
+        type=float,
         help="""The interval in seconds that our two trackers broadcast. The monitor will switch
 between the frequencies to make sure to pick them both up, but will prefer to stay on APRS in order
 to pick up other people.""",
