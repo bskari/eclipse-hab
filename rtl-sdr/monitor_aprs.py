@@ -5,10 +5,12 @@ import aprs_symbols
 import argparse
 import aprslib
 import copy
+import csv
 import curses
 import dataclasses
 import datetime
 import fcntl
+import io
 import logging
 import math
 import multiprocessing
@@ -77,6 +79,15 @@ class Options:
     call_sign: str
     interval_s: float
     aprs_only: bool
+
+
+@dataclasses.dataclass
+class Windows:
+    time: curses.window
+    error: curses.window
+    status: curses.window
+    messages: curses.window
+    stations: curses.window
 
 
 class CursesHandler(logging.Handler):
@@ -248,7 +259,7 @@ def update_error(window: curses.window) -> None:
     if hasattr(update_error, "formatted"):
         level: int = getattr(update_error, "level")
         timestamp: datetime.datetime = getattr(update_error, "timestamp")
-        formatted: str = getattr(update_error, "formatted")
+        formatted: str = getattr(update_error, "formatted") or "(none)"
     else:
         return
 
@@ -271,7 +282,7 @@ def update_error(window: curses.window) -> None:
     _, max_x = window.getmaxyx()
     window.clear()
     window.border()
-    window.addnstr(1, 1, formatted, max_x - 2, attributes | curses.color_pair(color_index))
+    window.addnstr(1, 1, formatted.split("\n")[0], max_x - 2, attributes | curses.color_pair(color_index))
     window.noutrefresh()
 
 
@@ -282,19 +293,12 @@ def update_time(window: curses.window) -> None:
     window.noutrefresh()
 
 
-def update_screen(
-    status_window: curses.window,
-    messages_window: curses.window,
-    stations_window: curses.window,
-    error_window: curses.window,
-    time_window: curses.window,
-    status: Status,
-) -> None:
-    update_status(status_window, status)
-    update_messages(messages_window, status)
-    update_stations(stations_window, status)
-    update_error(error_window)
-    update_time(time_window)
+def update_screen(windows: Windows, status: Status) -> None:
+    update_status(windows.status, status)
+    update_messages(windows.messages, status)
+    update_stations(windows.stations, status)
+    update_error(windows.error)
+    update_time(windows.time)
     curses.doupdate()
 
 
@@ -346,10 +350,13 @@ def get_launch_site(status: Status) -> AprsMessage:
     return DUMMY_APRS_MESSAGE
 
 
-def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status) -> str:
-    """Parse and save a message, and return the call sign and SSID."""
-    logger.info("Received APRS message %s", aprs_message)
-    parsed = aprslib.parse(aprs_message)
+def format_aprs_message(now: datetime.datetime, frequency_hz: int, raw_message: str) -> AprsMessage:
+    try:
+        parsed = aprslib.parse(raw_message)
+    except aprslib.exceptions.ParseError as exc:
+        logger.error("Parsing failed: %s", raw_message, exc_info=exc)
+        return ""
+
     # I guess if speed is 0, aprslib just won't put in the key for it? Ugh
     def get(key: str, type_):
         if key in parsed:
@@ -361,52 +368,48 @@ def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status)
         logger.warning("Unknown type in parse_and_save_message: %s", type_)
         return ""
 
-    status.messages.append(
-        AprsMessage(
-            call_sign=get("from", str),
-            altitude_m=get("altitude", float),
-            latitude_d=get("latitude", float),
-            longitude_d=get("longitude", float),
-            course_d=get("course", float),
-            horizontal_speed_mps=get("speed", float),
-            symbol=get("symbol", str),
-            symbol_table=get("symbol_table", str),
-            comment=get("comment", str),
-            frequency_hz=frequency_hz,
-            timestamp=datetime.datetime.now(),
-            aprs_message=aprs_message,
-        )
+    return AprsMessage(
+        call_sign=get("from", str),
+        altitude_m=get("altitude", float),
+        latitude_d=get("latitude", float),
+        longitude_d=get("longitude", float),
+        course_d=get("course", float),
+        horizontal_speed_mps=get("speed", float),
+        symbol=get("symbol", str),
+        symbol_table=get("symbol_table", str),
+        comment=get("comment", str),
+        frequency_hz=frequency_hz,
+        timestamp=now,
+        aprs_message=raw_message,
     )
-    return parsed["from"]
+
+
+def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status) -> str:
+    """Parse and save a message, and return the call sign and SSID."""
+    logger.info("Received APRS message %s", aprs_message)
+    now = datetime.datetime.now()
+
+    formatted = format_aprs_message(now, frequency_hz, aprs_message)
+    status.messages.append(formatted)
+
+    with open("messages.csv", "a") as file:
+        writer = csv.writer(file)
+        writer.writerow([int(now.timestamp()), frequency_hz, aprs_message])
+
+    return formatted.call_sign
 
 
 def main(stdscr: curses.window, receiver_class, options: Options) -> None:
+    windows = initialize_screen(stdscr)
+    initialize_logger(windows)
+    loop_forever(windows, receiver_class, options)
+
+
+def initialize_screen(stdscr: curses.window) -> Windows:
+    """Initializes the screen."""
     stdscr.nodelay(True)
     curses.curs_set(False)
     curses.init_pair(1, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-
-    my_call_sign = options.call_sign
-    interval_s = options.interval_s
-
-    status = Status(my_call_sign=my_call_sign)
-
-    RS41_FREQUENCY = 432560000
-    APRS_FREQUENCY = 144390000
-
-    frequencies_hz: typing.Iterable[int]
-    if options.aprs_only:
-        frequencies_hz  = (APRS_FREQUENCY,)
-    else:
-        frequencies_hz = (RS41_FREQUENCY, APRS_FREQUENCY)
-
-    frequency_index = 0
-    next_expected_rs41_time: typing.Optional[datetime.datetime] = None
-    timeout_s = 60 * 5
-    # Window on both sides. i.e., seconds before to switch to listen to RS41, seconds after expected
-    # to assume we missed it
-    rs41_window_s = 10
-    interval = datetime.timedelta(seconds=interval_s)
-    now = lambda: datetime.datetime.now()
 
     time_window = curses.newwin(3, 10, 0, 0)
     time_window_x = time_window.getmaxyx()[1]
@@ -429,8 +432,18 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
     messages_window.refresh()
     stations_window.refresh()
 
+    return Windows(
+        time=time_window,
+        error=error_window,
+        status=status_window,
+        messages=messages_window,
+        stations=stations_window,
+    )
+
+
+def initialize_logger(windows: Windows) -> None:
     logger.setLevel(logging.DEBUG)
-    handler = CursesHandler(error_window)
+    handler = CursesHandler(windows.error)
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     handler.setLevel(logging.WARN)
     logger.addHandler(handler)
@@ -439,7 +452,64 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
     handler2.setLevel(logging.DEBUG)
     logger.addHandler(handler2)
 
+
+def loop_forever(windows: Windows, receiver_class, options: Options) -> None:
     logger.debug("Starting")
+
+    my_call_sign = options.call_sign
+    interval_s = options.interval_s
+
+    status = Status(my_call_sign=my_call_sign)
+
+    try:
+        count = 0
+        with open("messages.csv", "rb") as file:
+            try:
+                file.seek(-1, os.SEEK_END)
+                while count < 20:
+                    file.seek(-2, os.SEEK_CUR)
+                    while file.read(1) != b"\n":
+                        file.seek(-2, os.SEEK_CUR)
+                    count += 1
+                lines = file.read().decode()
+            except OSError:
+                # This will happen if there aren't enough lines in the file
+                file.seek(0)
+                lines = file.read().decode()
+                pass
+        logger.debug("Found %d old messages from the messages file", count)
+
+        io_lines = io.StringIO(lines)
+        count = 0
+        reader = csv.reader(io_lines)
+        for row in reader:
+            unix_timestamp, frequency_hz_str, raw_message = row
+            time = datetime.datetime.fromtimestamp(int(unix_timestamp))
+            formatted = format_aprs_message(time, int(frequency_hz_str), raw_message)
+            status.messages.append(formatted)
+            count += 1
+        logger.debug("Parsed and added %d old messages from the messages file", count)
+
+    except Exception as exc:
+        logger.error("Unable to load previous messages: %s", exc, exc_info=exc)
+
+    RS41_FREQUENCY = 432560000
+    APRS_FREQUENCY = 144390000
+
+    frequencies_hz: typing.Iterable[int]
+    if options.aprs_only:
+        frequencies_hz  = (APRS_FREQUENCY,)
+    else:
+        frequencies_hz = (RS41_FREQUENCY, APRS_FREQUENCY)
+
+    frequency_index = 0
+    next_expected_rs41_time: typing.Optional[datetime.datetime] = None
+    timeout_s = 60 * 5
+    # Window on both sides. i.e., seconds before to switch to listen to RS41, seconds after expected
+    # to assume we missed it
+    rs41_window_s = 10
+    interval = datetime.timedelta(seconds=interval_s)
+    now = lambda: datetime.datetime.now()
 
     while True:
         # Wait for a message on this frequency from my call sign
@@ -469,7 +539,7 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
         ):
             # Just keep listening and parsing
             try:
-                update_screen(status_window, messages_window, stations_window, error_window, time_window, status)
+                update_screen(windows, status)
 
                 if not receiver.is_alive():
                     logger.error("Receiver quit unexpectedly")
@@ -477,7 +547,7 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
 
                 data_waiting = parent_pipe.poll(0.5)
                 if data_waiting:
-                    aprs_message = parent_pipe.recv()
+                    aprs_message = parent_pipe.recv().strip()
                     if not aprs_message:
                         continue
                     ssid = parse_and_save_message(aprs_message, frequency_hz, status)
@@ -512,7 +582,7 @@ def main(stdscr: curses.window, receiver_class, options: Options) -> None:
                 formatted = "(none)"
             logger.debug("Approaching the RS41 time: %s", formatted)
 
-        update_screen(status_window, messages_window, stations_window, error_window, time_window, status)
+        update_screen(windows, status)
         logger.debug("Killing monitor")
         parent_pipe.send("die")
         receiver.join()
@@ -551,8 +621,9 @@ class AprsReceiver(multiprocessing.Process):
         )
 
         # Change it to non-blocking
-        descriptor = fcntl.fcntl(direwolf.stdout, fcntl.F_GETFL)
-        fcntl.fcntl(direwolf.stdout, fcntl.F_SETFL, descriptor | os.O_NONBLOCK)
+        assert direwolf.stdout is not None
+        descriptor = fcntl.fcntl(direwolf.stdout.fileno(), fcntl.F_GETFL)
+        fcntl.fcntl(direwolf.stdout.fileno(), fcntl.F_SETFL, descriptor | os.O_NONBLOCK)
 
         while True:
             # The other thread will notify us if it's time to shut down
@@ -678,7 +749,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--launch-site",
         action="store",
-        help="Set the launch site coordinates. Used in distance calculations. Example: '40.000,-105.000'",
+        help="Set the launch site coordinates. Used in distance calculations. Example: '40.000,-105.000'. If not set, the first packet from the call sign will be assumed to be the position.",
         dest="launch_site",
     )
     parser.add_argument(
