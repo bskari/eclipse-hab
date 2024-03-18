@@ -72,6 +72,7 @@ class Status:
     monitor_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
     overall_start: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now())
     falling: bool = False
+    test: bool = False
 
 
 @dataclasses.dataclass
@@ -393,9 +394,11 @@ def parse_and_save_message(aprs_message: str, frequency_hz: int, status: Status)
     formatted = format_aprs_message(now, frequency_hz, aprs_message)
     status.messages.append(formatted)
 
-    with open("messages.csv", "a") as file:
-        writer = csv.writer(file)
-        writer.writerow([int(now.timestamp()), frequency_hz, aprs_message])
+    # Don't save test mode messages
+    if not status.test:
+        with open("messages.csv", "a") as file:
+            writer = csv.writer(file)
+            writer.writerow([int(now.timestamp()), frequency_hz, aprs_message])
 
     return formatted.call_sign
 
@@ -494,10 +497,9 @@ def loop_forever(windows: Windows, receiver_class, options: Options) -> None:
     my_call_sign = options.call_sign
     interval_s = options.interval_s
 
-    status = Status(my_call_sign=my_call_sign)
+    status = Status(my_call_sign=my_call_sign, test=options.test)
 
-    if not options.test:
-        load_stations_from_file(status)
+    load_stations_from_file(status)
 
     RS41_FREQUENCY = 432560000
     APRS_FREQUENCY = 144390000
