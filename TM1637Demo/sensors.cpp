@@ -1,5 +1,9 @@
 #include <stdlib.h>
 #include <math.h>
+
+// Right now, these just return test data. You'll need to replace these with
+// real functions that return data from the sensors or GPS.
+
 float randNegOneToOne() {
   return (float)(rand() - RAND_MAX / 2) / RAND_MAX;
 }
