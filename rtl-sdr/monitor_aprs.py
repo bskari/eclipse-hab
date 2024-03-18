@@ -235,15 +235,33 @@ def update_messages(window: curses.window, status: Status) -> None:
 
 def update_stations(window: curses.window, status: Status) -> None:
     """Show the most recent stations received."""
-    window.clear()
-    window.border()
+    if not hasattr(update_stations, "previous_recents"):
+        setattr(update_stations, "previous_recents", [])
+
+    max_y, max_x = window.getmaxyx()
+    now = datetime.datetime.now()
+
     station_to_message: typing.Dict[str, AprsMessage] = dict()
     for message in status.messages:
         station_to_message[message.call_sign] = message
     recents: typing.List[AprsMessage] = sorted(station_to_message.values(), key=lambda m: m.timestamp, reverse=True)
-    now = datetime.datetime.now()
+    previous_recents = getattr(update_stations, "previous_recents")
+    # If there are no new stations, just update the seconds
+    if recents == previous_recents:
+        # Just need to update the seconds
+        for count, msg in enumerate(recents):
+            seconds = int((now - msg.timestamp).total_seconds())
+            ago = f"{seconds // 3600:02}:{(seconds // 60) % 60:02}:{seconds % 60:02}"
+            window.addnstr(1 + count, 11, ago, max_x - 3)
+        window.noutrefresh()
+        return
+
+    # Otherwise, just refresh it all
+    setattr(update_stations, "previous_recents", recents)
+    window.clear()
+    window.border()
+
     launch_site = get_launch_site(status)
-    max_y, max_x = window.getmaxyx()
     for count, msg in enumerate(recents):
         distance_km = distance_m(launch_site.latitude_d, launch_site.longitude_d, msg.latitude_d, msg.longitude_d) / 1000
         seconds = int((now - msg.timestamp).total_seconds())
@@ -726,23 +744,6 @@ def long_to_d_m_fm(degrees: float) -> str:
     return f"{int(degrees)}{minutes:05.2f}"
 
 
-def start_webserver() -> None:
-    class MyServer(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header("Content-type", "* application/vnd.google-earth.kml+xml")
-            self.end_headers()
-            with open("balloon.kml", "r") as file:
-                self.wfile.write(file.read().encode())
-
-    def run_webserver():
-        webServer = HTTPServer(("localhost", 8080), MyServer)
-        webServer.serve_forever()
-
-    t = threading.Thread(target=run_webserver, args=[])
-    t.run()
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="APRS Monitor",
@@ -805,15 +806,6 @@ to pick up other people.""",
         aprs_only=parser_options.aprs_only,
         test=parser_options.test,
     )
-
-    class MyServer(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header("Content-type", "* application/vnd.google-earth.kml+xml")
-            self.end_headers()
-            with open("balloon.kml", "r") as file:
-                self.wfile.write(file.read().encode())
-
 
     curses.wrapper(
         lambda stdscr: main(stdscr, receiver_class, options),
