@@ -27,6 +27,9 @@ static int getAltitudePart_m();
 #ifdef ARDUINO
 static TM1637TinyDisplay display(CLK, DIO);
 #else
+// This is all test stuff for testing my code on a computer. You can just
+// delete this on an Arduino, or leave it in and the above include guard should
+// exclude it.
 #include <sys/time.h>
 #include <stdio.h>
 #include <assert.h>

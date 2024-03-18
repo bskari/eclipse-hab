@@ -1,3 +1,4 @@
+// This is just a test file so that I could test my code on a computer. It has nothing to do with Arduino.
 #ifndef ARDUINO
 
 #include "display.hpp"
