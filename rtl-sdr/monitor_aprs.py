@@ -79,6 +79,7 @@ class Options:
     call_sign: str
     interval_s: float
     aprs_only: bool
+    test: bool
 
 
 @dataclasses.dataclass
@@ -453,14 +454,7 @@ def initialize_logger(windows: Windows) -> None:
     logger.addHandler(handler2)
 
 
-def loop_forever(windows: Windows, receiver_class, options: Options) -> None:
-    logger.debug("Starting")
-
-    my_call_sign = options.call_sign
-    interval_s = options.interval_s
-
-    status = Status(my_call_sign=my_call_sign)
-
+def load_stations_from_file(status: Status) -> None:
     try:
         count = 0
         with open("messages.csv", "rb") as file:
@@ -492,6 +486,18 @@ def loop_forever(windows: Windows, receiver_class, options: Options) -> None:
 
     except Exception as exc:
         logger.error("Unable to load previous messages: %s", exc, exc_info=exc)
+
+
+def loop_forever(windows: Windows, receiver_class, options: Options) -> None:
+    logger.debug("Starting")
+
+    my_call_sign = options.call_sign
+    interval_s = options.interval_s
+
+    status = Status(my_call_sign=my_call_sign)
+
+    if not options.test:
+        load_stations_from_file(status)
 
     RS41_FREQUENCY = 432560000
     APRS_FREQUENCY = 144390000
@@ -543,6 +549,8 @@ def loop_forever(windows: Windows, receiver_class, options: Options) -> None:
 
                 if not receiver.is_alive():
                     logger.error("Receiver quit unexpectedly")
+                    # Let's give it half a second so it's not just continually restarting
+                    time.sleep(0.5)
                     break
 
                 data_waiting = parent_pipe.poll(0.5)
@@ -793,6 +801,7 @@ to pick up other people.""",
         call_sign=parser_options.call_sign,
         interval_s=parser_options.interval_s,
         aprs_only=parser_options.aprs_only,
+        test=parser_options.test,
     )
 
     class MyServer(BaseHTTPRequestHandler):
