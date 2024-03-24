@@ -5,6 +5,7 @@
 //   shuts down the pi.
 //
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 #include <wiringPi.h>
@@ -16,7 +17,6 @@ int buttonPrev;
 
 int buttonPressed() {
    int curButton;
-   int n;
    int pressed;
 
    curButton = (digitalRead(SHUTDOWN) == 0) ? TRUE : FALSE;
