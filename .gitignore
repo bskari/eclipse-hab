@@ -1,13 +1,15 @@
+TM1637Demo/.sconsign.dblite
+TM1637Demo/test
+lora/pi_shutdown
+lora/pits_ctrl
 pi/images
 pi/serial-config.json
 pi/temperatures
 pi/videos
-rtl-sdr/aprslib
 rtl-sdr/*.log
+rtl-sdr/aprslib
 rtl-sdr/balloon.kml
 rtl-sdr/messages.csv
-TM1637Demo/.sconsign.dblite
-TM1637Demo/test
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
