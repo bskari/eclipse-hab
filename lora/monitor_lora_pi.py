@@ -332,7 +332,7 @@ def loop_forever(windows: Windows, options: Options) -> None:
                     continue
 
                 except Exception as exc:
-                    logger.error("SocketListener exiting", exc_info=exc)
+                    logger.error(f"SocketListener exiting: {exc}", exc_info=exc)
                     break
 
 
@@ -351,7 +351,7 @@ def loop_forever(windows: Windows, options: Options) -> None:
                 
                     time.sleep(0.3)
             except Exception as exc:
-                logger.error(f"GoogleEarthWriter exiting {exc}", exc_info=exc)
+                logger.error(f"GoogleEarthWriter exiting: {exc}", exc_info=exc)
 
         def _write_kml_file(self):
             nonlocal positions
@@ -378,8 +378,13 @@ def loop_forever(windows: Windows, options: Options) -> None:
                 <tessellate>1</tessellate>
                 <altitudeMode>absolute</altitudeMode>
                 <coordinates>\n""")
-                for position in positions:
-                    file.write(f"{position.longitude_d},{position.latitude_d},{position.altitude_m}\n")
+                if len(positions) > 0:
+                    previous = positions[0]
+                    for position in positions:
+                        # We get so many messages, let's filter out ones where we don't move much
+                        if distance_m(position, previous) > 10:
+                            file.write(f"{position.longitude_d},{position.latitude_d},{position.altitude_m}\n")
+                            previous = position
                 file.write("""        </coordinates>
             </LineString>
             </Placemark>
@@ -475,8 +480,12 @@ def main(stdscr: curses.window, options: Options) -> None:
     loop_forever(windows, options)
 
 
-def distance_m(lat1: float, long1: float, lat2: float, long2: float) -> float:
+def distance_m(position1: Position, position2: Position) -> float:
     """Great circle distance."""
+    lat1 = position1.latitude_d
+    lat2 = position2.latitude_d
+    long1 = position1.longitude_d
+    long2 = position2.longitude_d
     radius_m = 6371 * 1000
     lat_delta_r = math.radians(lat2 - lat1)
     long_delta_r = math.radians(long2 - long1);
