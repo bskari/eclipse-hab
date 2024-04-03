@@ -7,17 +7,38 @@ phone's hotspot. Plug in the antenna and point it at the balloon.
 
 ## Laptop
 
-Run `ssh-agent fish` and `ssh-add ~/.ssh/id_ed25519` to unlock my SSH key.
-Connect to my phone's hotspot. Run `ip addr` to find your IP address. It should
-be listed under "wlp2s0" or something, and be something like "192.168.0.110".
-Run `sudo nmap -sP <IP range>`, e.g. 192.168.0.100-120, to find other computer
-IP addresses that are up. One of those should be the Pi. You can connect to it
-by running `ssh pi@<IP>`, e.g. `ssh pi@192.168.0.104`. Because you unlocked the
-SSH key, it should automatically log in. Run `exit` to log out. Otherwise, the
-password is the same as this laptop's.
+### Fancy monitoring script
 
-(TODO) Now you can run this script and it will automatically show images from
-the Pi. Neat!
+Run `python monitor_lora_pi.py` to have a fancy monitor. This will also
+periodically save the coordinates to a Google Earth file. Just open Google
+Earth and it will continually reload the coordinate file as it is updated.
+
+### Manual monitoring
+
+Connect to the phone's hotspot. Run `ip addr` to find the computer's IP
+address. Run `sudo nmap -sP <IP with last octet range>` to find the Pu's IP
+address. For example, if your IP is 192.168.0.120, run `sudo nmap
+192.168.0.100-150`. One of those should be the Pi.
+
+Run `ssh-copy-id -i ~/.ssh/id_dsa_eclipse_pi.pub pi@<Pi IP>` to set up auto
+login. It might say it's already done, that's fine.
+
+Now you should be able to log into the Pi by running `ssh pi@<Pi IP>`. If not,
+the password is "eclipse".
+
+Run `tmux attach -t lora` to see the monitoring program. It looks like it won't
+refresh after being resized, so you might need to kill it and restart.
+
+Alternatively, you can just run `nc <Pi IP> 6004` from the laptop to view the
+raw messages.
+
+### Photos
+
+The Pi should receive photos about once a minute. After you've set up auto
+login, run `sh rsync.sh` to copy the files to this laptop. The script is smart
+and will only copy over new files. They'll be stored in the ssdv folder. The
+full path is /home/bs/Documents/eclipse-hab/lora/ssdv . `gwenview` is a nice
+image viewer. I would just run this script once in a while.
 
 ## Shutdown
 

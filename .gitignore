@@ -2,13 +2,15 @@ TM1637Demo/.sconsign.dblite
 TM1637Demo/test
 lora/pi_shutdown
 lora/pits_ctrl
+lora/lora.kml
+lora/ssdv/
 pi/images
 pi/serial-config.json
 pi/temperatures
 pi/videos
 rtl-sdr/*.log
 rtl-sdr/aprslib
-rtl-sdr/balloon.kml
+rtl-sdr/aprs.kml
 rtl-sdr/messages.csv
 
 # Byte-compiled / optimized / DLL files
