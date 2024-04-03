@@ -325,17 +325,14 @@ def update_screen(windows: Windows, status: Status) -> None:
 
 
 def report_to_google_earth(status: Status) -> None:
-    with open("balloon.kml", "w") as file:
+    with open("aprs.kml", "w") as file:
         file.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>Paths</name>
-    <description>Examples of paths. Note that the tessellate tag is by default
-      set to 0. If you want to create tessellated lines, they must be authored
-      (or edited) directly in KML.</description>
     <Placemark>
-      <name>{status.my_call_sign}</name>
-      <description>KE0FZV weather balloon</description>
+      <name>{status.my_call_sign} APRS</name>
+      <description>{status.my_call_sign} weather balloon APRS</description>
       <Style>
         <LineStyle>
           <color>7f00ffff</color>

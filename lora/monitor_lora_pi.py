@@ -20,6 +20,7 @@ STATUS_LABELS_COUNT = 7
 FT_PER_M = 3.2808399
 MPH_PER_MPS = 2.2369363
 MILES_PER_KM = 0.62137119
+CALLSIGN = "KE0FZV"
 
 logger = logging.getLogger(__file__)
 
@@ -38,7 +39,7 @@ class Options:
 
 
 @dataclasses.dataclass
-class Position:
+class Status:
     index: int
     channel: int
     payload: str
@@ -51,6 +52,13 @@ class Position:
     ferr: float
     temperature_c: float
     sentence: str  # e.g. "$$KE0FZV,328,16:52:24,39.99717,-105.22822,01543,0,0,0,18.9*8302"
+
+
+@dataclasses.dataclass
+class Position:
+    latitude_d: float
+    longitude_d: float
+    altitude_m: float
 
 
 class CursesHandler(logging.Handler):
@@ -148,7 +156,7 @@ def update_error(window: curses.window) -> None:
     window.noutrefresh()
 
 
-def update_status(window: curses.window, position: Position, time: datetime.datetime) -> None:
+def update_status(window: curses.window, position: Status, time: datetime.datetime) -> None:
     if not hasattr(update_status, "recent_id"):
         setattr(update_status, "recent_id", None)
 
@@ -210,7 +218,7 @@ def update_sentences(window: curses.window, sentences: typing.List[typing.Tuple[
 
 def update_screen(
     windows: Windows,
-    recent_position: Position,
+    recent_position: Status,
     recent_position_time: datetime.datetime,
     sentences: typing.List[typing.Tuple[datetime.datetime, str]],
 ) -> None:
@@ -222,24 +230,8 @@ def update_screen(
 
 
 def loop_forever(windows: Windows, options: Options) -> None:
-    # Sample message:
-    # {
-    #   "class": "POSN",
-    #   "index": 0,
-    #   "channel": 0,
-    #   "payload": "KE0FZV",
-    #   "time": "16:52:24",
-    #   "lat": 39.99717,
-    #   "lon": -105.22822,
-    #   "alt": 1543,
-    #   "rate": 0.0,
-    #   "snr": 11,
-    #   "rssi": -68,
-    #   "ferr": -1.1,
-    #   "sentence": "$$KE0FZV,328,16:52:24,39.99717,-105.22822,01543,0,0,0,18.9*8302"
-    # }
 
-    recent_position: Position = Position(
+    recent_status: Status = Status(
         index=0,
         channel=0,
         payload="",
@@ -253,8 +245,10 @@ def loop_forever(windows: Windows, options: Options) -> None:
         temperature_c=0.0,
         sentence="<none>",
     )
-    recent_position_time: datetime.datetime = datetime.datetime.now() - datetime.timedelta(hours=24)
+    recent_status_time: datetime.datetime = datetime.datetime.now() - datetime.timedelta(hours=24)
     sentences: typing.List[typing.Tuple[datetime.datetime, str]] = []
+    positions: typing.List[Position] = []
+
 
     class SocketListener(threading.Thread):
         def __init__(self, sock: socket.socket):
@@ -270,23 +264,48 @@ def loop_forever(windows: Windows, options: Options) -> None:
                 return 0.0
         
         def run(self):
-            nonlocal recent_position
-            nonlocal recent_position_time
+            nonlocal recent_status
+            nonlocal recent_status_time
             nonlocal sentences
+            global CALLSIGN
             while not self.stop:
                 try:
                     # There might be more than one, so split by newline
-                    raw = self._sock.recv(4096).decode()
-                    splits = raw.split("\n")
+                    raw = self._sock.recv(4096)
+                    if len(raw) == 4096:
+                        # Ugh, we probably got too much data backed up and some got cut off. Just
+                        # drop it.
+                        continue
+
+                    splits = raw.decode().split("\n")
                     for raw_sentence in splits:
                         stripped = raw_sentence.strip()
                         if len(stripped) == 0:
                             continue
+
                         logger.debug(stripped)
+                        sentences.append((datetime.datetime.now(), stripped))
+
+                        # Sample message:
+                        # {
+                        #   "class": "POSN",
+                        #   "index": 0,
+                        #   "channel": 0,
+                        #   "payload": "KE0FZV",
+                        #   "time": "16:52:24",
+                        #   "lat": 39.99717,
+                        #   "lon": -105.22822,
+                        #   "alt": 1543,
+                        #   "rate": 0.0,
+                        #   "snr": 11,
+                        #   "rssi": -68,
+                        #   "ferr": -1.1,
+                        #   "sentence": "$$KE0FZV,328,16:52:24,39.99717,-105.22822,01543,0,0,0,18.9*8302"
+                        # }
                         parsed = json.loads(stripped.strip())
-                        if parsed.get("class") == "POSN":
+                        if parsed.get("class") == "POSN" and CALLSIGN in parsed.get("payload"):
                             sentence = parsed.get("sentence")
-                            recent_position = Position(
+                            recent_status = Status(
                                 index=parsed.get("index"),
                                 channel=parsed.get("channel"),
                                 payload=parsed.get("payload"),
@@ -300,11 +319,14 @@ def loop_forever(windows: Windows, options: Options) -> None:
                                 temperature_c=self.parse_temperature(sentence),
                                 sentence=sentence,
                             )
-                            recent_position_time = datetime.datetime.now()
-                            sentences.append((datetime.datetime.now(), stripped))
-                            # There might be a lot, so trim them occasionally
-                            if len(sentences) > 1000:
-                                sentences = sentences[-100:]
+                            recent_status_time = datetime.datetime.now()
+                            positions.append(
+                                Position(
+                                    latitude_d=recent_status.latitude_d,
+                                    longitude_d=recent_status.longitude_d,
+                                    altitude_m=recent_status.altitude_m,
+                                )
+                            )
 
                 except socket.timeout:
                     continue
@@ -313,6 +335,58 @@ def loop_forever(windows: Windows, options: Options) -> None:
                     logger.error("SocketListener exiting", exc_info=exc)
                     break
 
+
+    class GoogleEarthWriter(threading.Thread):
+        def __init__(self):
+            self.stop = False
+            self._last_update = datetime.datetime.now() - datetime.timedelta(hours=4)
+            super().__init__()
+        
+        def run(self):
+            try:
+                while not self.stop:
+                    if (datetime.datetime.now() - self._last_update).seconds > 10:
+                        self._last_update = datetime.datetime.now()
+                        self._write_kml_file()
+                
+                    time.sleep(0.3)
+            except Exception as exc:
+                logger.error(f"GoogleEarthWriter exiting {exc}", exc_info=exc)
+
+        def _write_kml_file(self):
+            nonlocal positions
+            global CALLSIGN
+            with open("lora.kml", "w") as file:
+                file.write(f"""<?xml version="1.0" encoding="UTF-8"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2">
+        <Document>
+            <name>Paths</name>
+            <Placemark>
+            <name>{CALLSIGN}</name>
+            <description>{CALLSIGN} weather balloon LoRa</description>
+            <Style>
+                <LineStyle>
+                <color>ff0000ff</color>
+                <width>4</width>
+                </LineStyle>
+                <PolyStyle>
+                <color>ff000000</color>
+                </PolyStyle>
+            </Style>
+            <LineString>
+                <extrude>1</extrude>
+                <tessellate>1</tessellate>
+                <altitudeMode>absolute</altitudeMode>
+                <coordinates>\n""")
+                for position in positions:
+                    file.write(f"{position.longitude_d},{position.latitude_d},{position.altitude_m}\n")
+                file.write("""        </coordinates>
+            </LineString>
+            </Placemark>
+        </Document>
+        </kml>""")
+
+
     logger.debug("Starting")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -320,12 +394,15 @@ def loop_forever(windows: Windows, options: Options) -> None:
         sock.settimeout(0.5)
         listener = SocketListener(sock)
         listener.start()
+        google_earth_writer = GoogleEarthWriter()
+        google_earth_writer.start()
         while listener.is_alive:
             try:
-                update_screen(windows, recent_position, recent_position_time, sentences)
+                update_screen(windows, recent_status, recent_status_time, sentences)
                 time.sleep(1)
             except KeyboardInterrupt:
                 listener.stop = True
+                google_earth_writer.stop = True
                 logger.warning("Exiting...")
                 update_error(windows.error)
                 curses.doupdate()
