@@ -35,7 +35,6 @@ class Windows:
 class Options:
     ip: str
     port: int
-    test: bool
 
 
 @dataclasses.dataclass
@@ -50,6 +49,7 @@ class Position:
     snr: int
     rssi: int
     ferr: float
+    temperature_c: float
     sentence: str  # e.g. "$$KE0FZV,328,16:52:24,39.99717,-105.22822,01543,0,0,0,18.9*8302"
 
 
@@ -179,7 +179,7 @@ def update_status(window: curses.window, position: Position, time: datetime.date
     window.addnstr(5, 1, f"Snr: {position.snr}", max_x - 2)
     window.addnstr(6, 1, f"Rssi: {position.rssi}", max_x - 2)
     # TODO Is this included in the message?
-    window.addnstr(7, 1, f"Temperature: {0}°C, {0 * 1.8 + 32:.0f}°F", max_x - 2)
+    window.addnstr(7, 1, f"Temperature: {position.temperature_c}°C, {position.temperature_c * 1.8 + 32:.0f}°F", max_x - 2)
 
     window.noutrefresh()
 
@@ -250,6 +250,7 @@ def loop_forever(windows: Windows, options: Options) -> None:
         snr=0,
         rssi=0,
         ferr=0,
+        temperature_c=0.0,
         sentence="<none>",
     )
     recent_position_time: datetime.datetime = datetime.datetime.now() - datetime.timedelta(hours=24)
@@ -260,6 +261,13 @@ def loop_forever(windows: Windows, options: Options) -> None:
             self._sock = sock
             self.stop = False
             super().__init__()
+
+        @staticmethod
+        def parse_temperature(raw: str) -> float:
+            try:
+                return float(raw.split(",")[-1].split("*")[0])
+            except:
+                return 0.0
         
         def run(self):
             nonlocal recent_position
@@ -271,12 +279,13 @@ def loop_forever(windows: Windows, options: Options) -> None:
                     raw = self._sock.recv(4096).decode()
                     splits = raw.split("\n")
                     for raw_sentence in splits:
-                        sentence = raw_sentence.strip()
-                        if len(sentence) == 0:
+                        stripped = raw_sentence.strip()
+                        if len(stripped) == 0:
                             continue
-                        logger.debug(sentence)
-                        parsed = json.loads(sentence.strip())
+                        logger.debug(stripped)
+                        parsed = json.loads(stripped.strip())
                         if parsed.get("class") == "POSN":
+                            sentence = parsed.get("sentence")
                             recent_position = Position(
                                 index=parsed.get("index"),
                                 channel=parsed.get("channel"),
@@ -288,10 +297,11 @@ def loop_forever(windows: Windows, options: Options) -> None:
                                 snr=parsed.get("snr"),
                                 rssi=parsed.get("rssi"),
                                 ferr=parsed.get("ferr"),
-                                sentence=parsed.get("sentence"),
+                                temperature_c=self.parse_temperature(sentence),
+                                sentence=sentence,
                             )
                             recent_position_time = datetime.datetime.now()
-                            sentences.append((datetime.datetime.now(), sentence))
+                            sentences.append((datetime.datetime.now(), stripped))
                             # There might be a lot, so trim them occasionally
                             if len(sentences) > 1000:
                                 sentences = sentences[-100:]
@@ -351,7 +361,7 @@ def find_lora_ip(port: int) -> typing.Optional[str]:
         low = max(0, low)
         high = min(255, high)
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            print(f"Scanning for LoRa {partial_ip}.{low}-{high}")
+            print(f"Scanning for LoRa on {partial_ip}.{low}-{high}")
             addresses = (partial_ip + "." + str(octet) for octet in range(low, high))
             futures = [executor.submit(connect, address) for address in addresses]
             results = [f.result() for f in futures]
@@ -434,13 +444,12 @@ if __name__ == "__main__":
         lora_ip = parser_options.ip
     if lora_ip is None:
         print("Unable to find LoRa gateway, is it running?")
-        print("Specify its IP address manually using --ip")
+        print("Or specify its IP address manually using --ip")
         sys.exit(1)
 
     options = Options(
         ip=lora_ip,
         port=parser_options.port,
-        test=False,  # TODO
     )
     curses.wrapper(
         lambda stdscr: main(stdscr, options)
