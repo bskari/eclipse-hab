@@ -29,6 +29,7 @@ OFFSET_S = 4 * 60 + 10
 STATUS_LABELS_COUNT = 14
 FT_PER_M = 3.2808399
 MPH_PER_MPS = 2.2369363
+MILES_PER_KM = 0.62137119
 
 logger = logging.getLogger(__file__)
 
@@ -191,7 +192,7 @@ def update_status(window: curses.window, status: Status) -> None:
     window.border()
     window.addnstr(1, 1, f"Latitude: {recent.latitude_d:.4f}", max_x - 2)
     window.addnstr(2, 1, f"Longitude: {recent.longitude_d:.4f}", max_x - 2)
-    window.addnstr(3, 1, f"Distance: {distance_km:.2f} km, {distance_km * 0.62137119:.2f} mi", max_x - 2)
+    window.addnstr(3, 1, f"Distance: {distance_km:.2f} km, {distance_km * MILES_PER_KM:.2f} mi", max_x - 2)
     window.addnstr(4, 1, f"Altitude: {recent.altitude_m:.1f} m, {recent.altitude_m * FT_PER_M:.1f} ft", max_x - 2)
     window.addnstr(5, 1, f"Est. alt.: {estimated_altitude_m:.1f} m, {estimated_altitude_m * FT_PER_M:.1f} ft", max_x - 2)
     window.addnstr(6, 1, f"Reported course: {int(recent.course_d)}°", max_x - 2)
@@ -470,7 +471,7 @@ def initialize_logger(windows: Windows) -> None:
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     handler.setLevel(logging.WARN)
     logger.addHandler(handler)
-    handler2 = logging.FileHandler("debug.log")
+    handler2 = logging.FileHandler("aprs-debug.log")
     handler2.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)s %(message)s"))
     handler2.setLevel(logging.DEBUG)
     logger.addHandler(handler2)
