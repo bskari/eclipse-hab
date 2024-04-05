@@ -46,13 +46,6 @@ void setup() {
   pinMode(13, OUTPUT);
   digitalWrite(12, LOW);
   digitalWrite(13, LOW);
-
-  Serial.println("Latitude:");
-  Serial.println(gnss_sensor.getLatitude());
-  Serial.println("Longitude:");
-  Serial.println(gnss_sensor.getLongitude());
-  Serial.println("Altitude:");
-  Serial.println(gnss_sensor.getAltitude());
 }
 
 void loop() {
