@@ -54,6 +54,9 @@ float getVerticalSpeed_mps() {
 
     const float currentAltitude_m = gnss_sensor.getAltitude() / 1000;
     const float diff_s = diff_ms * 1000;
+    if (diff_s == 0) {
+      return 1.0;
+    }
     speed_mps = (currentAltitude_m - previousAltitude_m) / diff_s;
     previousAltitude_m = currentAltitude_m;
   }

@@ -29,10 +29,6 @@ SFE_UBLOX_GNSS gnss_sensor;
 
 void setup() {
   Serial.begin(115200);
-
-  // Call setupDisplay with the desired brightness [0..7]
-  setupDisplay(3);
-  tickDisplay();
   
   delay(5000);
   sd_setup();
@@ -46,6 +42,10 @@ void setup() {
   pinMode(13, OUTPUT);
   digitalWrite(12, LOW);
   digitalWrite(13, LOW);
+
+  // This needs to be done after the sensors have been initialized
+  // Call setupDisplay with the desired brightness [0..7]
+  setupDisplay(3);
 }
 
 void loop() {
@@ -107,7 +107,7 @@ void bme_setup() {
   env_sensor.setOversampling(HumiditySensor, Oversample16);     // Use enumerated type values
   env_sensor.setOversampling(PressureSensor, Oversample16);     // Use enumerated type values
   env_sensor.setIIRFilter(IIR4);  // Use enumerated type values
-  env_sensor.setGas(320, 150);  // 320�c for 150 milliseconds
+  env_sensor.setGas(320, 150);  // 320c for 150 milliseconds
 }
 
 void gnss_setup() {
@@ -117,12 +117,24 @@ void gnss_setup() {
 }
 
 void take_visnir_reading() {
-  char buffer[16];
+  char buffer[256];
 
   visnir_sensor.takeMeasurements();
   if (visnir_sensor.getVersion() == SENSORTYPE_AS7262)
   {
     //Visible readings
+    snprintf(
+      buffer,
+      sizeof(buffer),
+      "V[%0.0f] B[%0.0f] G[%0.0f] Y[%0.0f] O[%0.0f] R[%0.0f]\n",
+      visnir_sensor.getCalibratedViolet(),
+      visnir_sensor.getCalibratedBlue(),
+      visnir_sensor.getCalibratedGreen(),
+      visnir_sensor.getCalibratedYellow(),
+      visnir_sensor.getCalibratedOrange(),
+      visnir_sensor.getCalibratedRed()
+    );
+    Serial.print(buffer);
     Serial.print("V[");
     appendFile(SD, "/dataout.txt", "Reading: V[");
     Serial.print(visnir_sensor.getCalibratedViolet(), 2);
@@ -158,6 +170,18 @@ void take_visnir_reading() {
   }  
   else if (visnir_sensor.getVersion() == SENSORTYPE_AS7263)
   {
+    snprintf(
+      buffer,
+      sizeof(buffer),
+      "R[%0.0f] S[%0.0f] T[%0.0f] U[%0.0f] V[%0.0f] W[%0.0f]\n",
+      visnir_sensor.getCalibratedR(),
+      visnir_sensor.getCalibratedS(),
+      visnir_sensor.getCalibratedT(),
+      visnir_sensor.getCalibratedU(),
+      visnir_sensor.getCalibratedV(),
+      visnir_sensor.getCalibratedW()
+    );
+    Serial.print(buffer);
     //Near IR readings
     Serial.print("R[");
     appendFile(SD, "/dataout.txt", "Reading: R[");
@@ -195,7 +219,7 @@ void take_visnir_reading() {
 }
 
 void take_uv_reading() {
-  char buffer[16];
+  char buffer[256];
 
   // Send a start measurement command.
   if(kSTkErrOk != uv_sensor.setStartState(true))
@@ -207,6 +231,16 @@ void take_uv_reading() {
   // Read UV values.
   if(kSTkErrOk != uv_sensor.readAllUV())
     Serial.println("Error reading UV.");
+
+  snprintf(
+    buffer,
+    sizeof(buffer),
+    "UVA:%0.0f UVB:%0.0f UVC:%0.0f\n",
+    uv_sensor.getUVA(),
+    uv_sensor.getUVB(),
+    uv_sensor.getUVC()
+  );
+  Serial.print(buffer);
 
   Serial.print("UVA:");
   appendFile(SD, "/dataout.txt", "UVA:");
@@ -228,9 +262,23 @@ void take_uv_reading() {
 
 void take_env_reading() {
   static int32_t  temp, humidity, pressure, gas;  // BME readings
-  char buffer[16];
+  char buffer[256];
   
   env_sensor.getSensorData(temp, humidity, pressure, gas);  // Get readings
+
+  snprintf(
+    buffer,
+    sizeof(buffer),
+    "TempC:%d.%d Humid%%:%d.%d PresshPa:%d.%d\n",
+    temp / 100,
+    temp % 100,
+    humidity / 1000,
+    humidity % 1000,
+    pressure / 100,
+    pressure % 100
+  );
+  Serial.print(buffer);
+
   Serial.print("TempC:");
   appendFile(SD, "/dataout.txt", "TempC:");
   Serial.print(temp / 100);
@@ -266,16 +314,30 @@ void take_env_reading() {
 }
 
 void take_gnss_reading() {
-  char buffer[32];
+  char buffer[256];
 
-  long latitude = gnss_sensor.getLatitude();
+  const long latitude = gnss_sensor.getLatitude();
+  const long longitude = gnss_sensor.getLongitude();
+  const long altitude = gnss_sensor.getAltitude();
+  const byte SIV = gnss_sensor.getSIV();
+
+  snprintf(
+    buffer,
+    sizeof(buffer),
+    "Lat: %ld Long: %ld (degrees * 10^-7) Alt: %ld (mm) SIV: %d\n",
+    latitude,
+    longitude,
+    altitude,
+    SIV
+  );
+  Serial.print(buffer);
+
   Serial.print(F("Lat: "));
   appendFile(SD, "/dataout.txt", "Lat: ");
   Serial.print(latitude);
   String(latitude).toCharArray(buffer, 32);
   appendFile(SD, "/dataout.txt", buffer);
 
-  long longitude = gnss_sensor.getLongitude();
   Serial.print(F(" Long: "));
   appendFile(SD, "/dataout.txt", " Long: ");
   Serial.print(longitude);
@@ -284,7 +346,6 @@ void take_gnss_reading() {
   Serial.print(F(" (degrees * 10^-7)"));
   appendFile(SD, "/dataout.txt", " (degrees * 10^-7)");
 
-  long altitude = gnss_sensor.getAltitude();
   Serial.print(F(" Alt: "));
   appendFile(SD, "/dataout.txt", " Alt: ");
   Serial.print(altitude);
@@ -293,7 +354,6 @@ void take_gnss_reading() {
   Serial.print(F(" (mm)"));
   appendFile(SD, "/dataout.txt", " (mm)");
 
-  byte SIV = gnss_sensor.getSIV();
   Serial.print(F(" SIV: "));
   appendFile(SD, "/dataout.txt", " SIV: "); 
   Serial.print(SIV);
@@ -301,35 +361,65 @@ void take_gnss_reading() {
   appendFile(SD, "/dataout.txt", buffer);
 
   Serial.println();
+
+  const auto year = gnss_sensor.getYear();
+  const auto month = gnss_sensor.getMonth();
+  const auto day = gnss_sensor.getDay();
+  const auto hour = gnss_sensor.getHour();
+  const auto minute = gnss_sensor.getMinute();
+  const auto second = gnss_sensor.getSecond();
+  snprintf(
+    buffer,
+    sizeof(buffer),
+    "%d-%02d-%02d %02d:%02d:%02d\n",
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second
+  );
+  Serial.print(buffer);
+
   appendFile(SD, "/dataout.txt", "\n"); 
-  Serial.print(gnss_sensor.getYear());
-  String(gnss_sensor.getYear()).toCharArray(buffer, 32);
+  Serial.print(year);
+  String(year).toCharArray(buffer, 32);
   appendFile(SD, "/dataout.txt", buffer);
   Serial.print("-");
   appendFile(SD, "/dataout.txt", "-"); 
-  Serial.print(gnss_sensor.getMonth());
-  String(gnss_sensor.getMonth()).toCharArray(buffer, 32);
+  Serial.print(month);
+  String(month).toCharArray(buffer, 32);
   appendFile(SD, "/dataout.txt", buffer);
   Serial.print("-");
   appendFile(SD, "/dataout.txt", "-"); 
-  Serial.print(gnss_sensor.getDay());
-  String(gnss_sensor.getDay()).toCharArray(buffer, 32);
+  Serial.print(day);
+  String(day).toCharArray(buffer, 32);
   appendFile(SD, "/dataout.txt", buffer);
   Serial.print(" ");
   appendFile(SD, "/dataout.txt", " "); 
-  Serial.print(gnss_sensor.getHour());
-  String(gnss_sensor.getHour()).toCharArray(buffer, 32);
+  Serial.print(hour);
+  String(hour).toCharArray(buffer, 32);
   appendFile(SD, "/dataout.txt", buffer);
   Serial.print(":");
   appendFile(SD, "/dataout.txt", ":"); 
-  Serial.print(gnss_sensor.getMinute());
-  String(gnss_sensor.getMinute()).toCharArray(buffer, 32);
+  Serial.print(minute);
+  String(minute).toCharArray(buffer, 32);
   appendFile(SD, "/dataout.txt", buffer);
   Serial.print(":");
   appendFile(SD, "/dataout.txt", ":"); 
-  Serial.print(gnss_sensor.getSecond());
-  String(gnss_sensor.getSecond()).toCharArray(buffer, 32);
+  Serial.print(second);
+  String(second).toCharArray(buffer, 32);
   appendFile(SD, "/dataout.txt", buffer);
+
+  snprintf(
+    buffer,
+    sizeof(buffer),
+    "  Time is %svalid  Date is %svalid\n",
+    gnss_sensor.getTimeValid() ? "" : "not " ,
+    gnss_sensor.getDateValid() ? "" : "not "
+  );
+  Serial.print(buffer);
+
 
   Serial.print("  Time is ");
   appendFile(SD, "/dataout.txt", "  Time is "); 
