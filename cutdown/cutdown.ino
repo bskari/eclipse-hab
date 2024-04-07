@@ -92,8 +92,7 @@ static int32_t cutDownTime_s = 0;
 static int32_t offset_s = 0;
 static decltype(millis()) initializedTime_ms = 0;
 
-void setup()
-{
+void setup() {
   RemoteXY_Init();
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT); // Pressed = LOW
@@ -105,8 +104,7 @@ void setup()
   RemoteXY.burnDurationSlider = 5;
 }
 
-void loop()
-{
+void loop() {
   if (lowPower) {
     // Sleep
     if (!armed) {
@@ -115,6 +113,14 @@ void loop()
       digitalWrite(LED_BUILTIN, LOW);
     }
     esp_light_sleep_start();
+  } else if (!currentTimeInitialized || !cutDownTimeInitialized) {
+    // If it's been 20 minutes and we haven't been configured, then just fudge it
+    if (millis() > 20 * 60 * 1000) {
+      currentTimeInitialized = true;
+      cutDownTimeInitialized = true;
+      offset_s = 0;
+      cutdownTime_s = 60 * 60 * 2;
+    }
   } else if (currentTimeInitialized && cutDownTimeInitialized && millis() > initializedTime_ms + sleepAfterTime_s * 1000) {
     lowPower = true;
     // Shut off peripherals
