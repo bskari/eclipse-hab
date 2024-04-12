@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<name>Flight Path</name>
+<description>Flight Data for start time 2024-04-08T16:00:00Z, at site: 33.5088,263.6121, standard flight profile.</description>
+<Style id="yellowPoly">
+<LineStyle>
+<color>7f00ffff</color>
+<width>4</width>
+</LineStyle>
+<PolyStyle>
+<color>7f00ff00</color>
+</PolyStyle>
+</Style>
+<Placemark>
+<name>Actual path</name>
+<description>Actually received packets</description>
+<styleUrl>#yellowPoly</styleUrl>
+<LineString>
+<extrude>1</extrude>
+<tesselate>1</tesselate>
+<altitudeMode>absolute</altitudeMode>
+<coordinates>
+<!-- 2024, 4, 8, 13, 53, 13-->
+-95.1468,34.1268,16845.6
+<!-- 2024, 4, 8, 14, 14, 1-->
+-95.030167,34.213333,22694.2
+<!-- 2024, 4, 8, 14, 22, 21-->
+-95.0295,34.23,25135.3
+<!-- 2024, 4, 8, 14, 39, 1-->
+-94.994833,34.296333,30060.3
+</coordinates>
+</LineString>
+</Placemark>
+</Document></kml>
