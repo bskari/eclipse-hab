@@ -82,6 +82,7 @@ class Options:
     call_sign: str
     interval_s: float
     aprs_only: bool
+    rs41_only: bool
     test: bool
 
 
@@ -524,11 +525,14 @@ def loop_forever(windows: Windows, receiver_class, options: Options) -> None:
     frequencies_hz: typing.Iterable[int]
     if options.aprs_only:
         frequencies_hz  = (APRS_FREQUENCY,)
+    elif options.rs41_only:
+        frequencies_hz  = (RS41_FREQUENCY,)
     else:
-        frequencies_hz = (RS41_FREQUENCY, APRS_FREQUENCY)
+        #frequencies_hz = (RS41_FREQUENCY, APRS_FREQUENCY)
+        frequencies_hz = (APRS_FREQUENCY, RS41_FREQUENCY)
 
     frequency_index = 0
-    next_expected_rs41_time: typing.Optional[datetime.datetime] = None
+    next_expected_rs41_time: typing.Optional[datetime.datetime] = datetime.datetime(2024, 4, 8, 17, 38, 11)
     timeout_s = 60 * 5
     # Window on both sides. i.e., seconds before to switch to listen to RS41, seconds after expected
     # to assume we missed it
@@ -780,6 +784,13 @@ to pick up other people.""",
         dest="aprs_only",
     )
     parser.add_argument(
+        "--rs41-only",
+        action="store_true",
+        default=False,
+        help="Only monitor the RS41 frequency, skip the APRS.",
+        dest="rs41_only",
+    )
+    parser.add_argument(
         "--test",
         action="store_true",
         default=False,
@@ -803,6 +814,7 @@ to pick up other people.""",
         call_sign=parser_options.call_sign,
         interval_s=parser_options.interval_s,
         aprs_only=parser_options.aprs_only,
+        rs41_only=parser_options.rs41_only,
         test=parser_options.test,
     )
 
