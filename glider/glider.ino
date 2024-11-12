@@ -2,10 +2,18 @@
 #include <Adafruit_LSM303_Accel.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <TinyGPSPlus.h>
+//#include <SoftwareSerial.h>
 
 /* Assign a unique ID to this sensor at the same time */
 Adafruit_LSM303DLH_Mag_Unified mag = Adafruit_LSM303DLH_Mag_Unified(12345);
+
 Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
+
+static const int gpsRxPin = 17;
+static const int gpsTxPin = 16;
+static const uint32_t gpsBaud = 9600;
+TinyGPSPlus gps;
 
 void displayMagSensorDetails(void) {
   sensor_t sensor;
@@ -28,7 +36,6 @@ void displayMagSensorDetails(void) {
   Serial.println(" uT");
   Serial.println("------------------------------------");
   Serial.println("");
-  delay(500);
 }
 
 void displayAccelSensorDetails(void) {
@@ -52,31 +59,24 @@ void displayAccelSensorDetails(void) {
   Serial.println(" m/s^2");
   Serial.println("------------------------------------");
   Serial.println("");
-  delay(500);
 }
 
 void setup(void) {
   Serial.begin(115200);
-  Serial.println("Fusion test");
-  Serial.println("");
+  Serial.println("Glider test");
+  Serial2.begin(gpsBaud);
 
-  /* Enable auto-gain */
+  // Magnetometer
   mag.enableAutoRange(true);
-
-  /* Initialise the sensor */
   if (!mag.begin()) {
-    /* There was a problem detecting the LSM303 ... check your connections */
-    Serial.println("Ooops, no LSM303 detected ... Check your wiring!");
-    while (1)
-      ;
+    Serial.println("Ooops, no LSM303 magnetometer detected... Check your wiring!");
+    while (1);
   }
 
-  /* Initialise the sensor */
+  // Accelerometer
   if (!accel.begin()) {
-    /* There was a problem detecting the ADXL345 ... check your connections */
-    Serial.println("Ooops, no LSM303 detected ... Check your wiring!");
-    while (1)
-      ;
+    Serial.println("Ooops, no LSM303 accelerator detected... Check your wiring!");
+    while (1);
   }
 
   accel.setRange(LSM303_RANGE_4G);
@@ -112,17 +112,14 @@ void setup(void) {
     break;
   }
 
-  /* Display some basic information on this sensor */
   displayMagSensorDetails();
   displayAccelSensorDetails();
 }
 
 void loop(void) {
-  /* Get a new sensor event */
   sensors_event_t event;
   mag.getEvent(&event);
 
-  /* Display the results (magnetic vector values are in micro-Tesla (uT)) */
   Serial.print("X: ");
   Serial.print(event.magnetic.x);
   Serial.print("  ");
@@ -134,12 +131,8 @@ void loop(void) {
   Serial.print("  ");
   Serial.println("uT");
 
-  /* Delay before the next sample */
-  delay(500);
-
   accel.getEvent(&event);
 
-  /* Display the results (acceleration is measured in m/s^2) */
   Serial.print("X: ");
   Serial.print(event.acceleration.x);
   Serial.print("  ");
@@ -151,6 +144,21 @@ void loop(void) {
   Serial.print("  ");
   Serial.println("m/s^2");
 
-  /* Delay before the next sample */
+  while (Serial2.available()) {
+    if (gps.encode(ss.read())) {
+      Serial.print(gps.location.lat(), 6);
+      Serial.print(" ");
+      Serial.print(gps.location.lng(), 6);
+      Serial.print(" ");
+      Serial.print(gps.altitude.meters());
+      Serial.println();
+    }
+  }
+  Serial.println(Serial2.available());
+  while (Serial2.available() > 0) {
+    Serial.print(static_cast<char>(Serial2.read()));
+  }
+  Serial2.println();
+
   delay(500);
 }
