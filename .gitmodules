@@ -1,0 +1,3 @@
+[submodule "glider/board/components/GT-U7_GPS-Module"]
+	path = glider/board/components/GT-U7_GPS-Module
+	url = https://github.com/Qeteshpony/GT-U7_GPS-Module
