@@ -2,8 +2,6 @@
 #include <Adafruit_LSM303_Accel.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
-#include <TinyGPSPlus.h>
-//#include <SoftwareSerial.h>
 
 /* Assign a unique ID to this sensor at the same time */
 Adafruit_LSM303DLH_Mag_Unified mag = Adafruit_LSM303DLH_Mag_Unified(12345);
@@ -12,8 +10,6 @@ Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
 
 static const int gpsRxPin = 17;
 static const int gpsTxPin = 16;
-static const uint32_t gpsBaud = 9600;
-TinyGPSPlus gps;
 
 void displayMagSensorDetails(void) {
   sensor_t sensor;
@@ -64,7 +60,6 @@ void displayAccelSensorDetails(void) {
 void setup(void) {
   Serial.begin(115200);
   Serial.println("Glider test");
-  Serial2.begin(gpsBaud);
 
   // Magnetometer
   mag.enableAutoRange(true);
@@ -114,6 +109,43 @@ void setup(void) {
 
   displayMagSensorDetails();
   displayAccelSensorDetails();
+
+  Serial2.begin(9600);
+  // From https://gis.stackexchange.com/questions/198846/enabling-disabling-nmea-sentences-on-u-blox-gps-receiver
+  const byte gllOff[] = {0xb5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xf0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2b, 0xb5, 0x62, 0x06, 0x01, 0x02, 0x00, 0xf0, 0x01, 0xfa, 0x12};
+  const byte gsaOff[] = {0xb5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xf0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x32, 0xb5, 0x62, 0x06, 0x01, 0x02, 0x00, 0xf0, 0x02, 0xfb, 0x13};
+  const byte gsvOff[] = {0xb5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xf0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39, 0xb5, 0x62, 0x06, 0x01, 0x02, 0x00, 0xf0, 0x03, 0xfc, 0x14};
+  const byte rmcOff[] = {0xb5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xf0, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04, 0x40, 0xb5, 0x62, 0x06, 0x01, 0x02, 0x00, 0xf0, 0x04, 0xfd, 0x15};
+  const byte vtgOff[] = {0xb5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xf0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x05, 0x47, 0xb5, 0x62, 0x06, 0x01, 0x02, 0x00, 0xf0, 0x05, 0xfe, 0x16};
+  // Changing baud doesn't seem to work
+  //const byte baud38400[] = {0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0xF0, 0x87, 0x00, 0x00, 0x07, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x24}; 
+  Serial2.write(gllOff, sizeof(gllOff));
+  Serial2.flush();
+  Serial2.write(gsaOff, sizeof(gsaOff));
+  Serial2.flush();
+  Serial2.write(gsvOff, sizeof(gsvOff));
+  Serial2.flush();
+  Serial2.write(rmcOff, sizeof(rmcOff));
+  Serial2.flush();
+  Serial2.write(vtgOff, sizeof(vtgOff));
+  Serial2.flush();
+  //Serial2.write(baud38400, sizeof(baud38400));
+  //Serial2.flush();
+  //Serial2.begin(38400);
+}
+
+void resetGps() {
+  // Controlled software reset
+  const byte reset[] = {0xb5, 0x62, 0x06, 0x04, 0x04, 0x00, 0x00, 0x00, 0x02, 0x00, 0x0f, 0x66};
+  static_assert(sizeof(reset) == 12);
+  Serial2.write(reset, sizeof(reset));
+}
+
+char blockingReadFromGps() {
+  while (Serial2.available() == 0) {
+    // Wait
+  }
+  return Serial2.read();
 }
 
 void loop(void) {
@@ -144,21 +176,43 @@ void loop(void) {
   Serial.print("  ");
   Serial.println("m/s^2");
 
-  while (Serial2.available()) {
-    if (gps.encode(ss.read())) {
-      Serial.print(gps.location.lat(), 6);
-      Serial.print(" ");
-      Serial.print(gps.location.lng(), 6);
-      Serial.print(" ");
-      Serial.print(gps.altitude.meters());
-      Serial.println();
+  static char buffer[105];
+  static int index = 0;
+  while (Serial2.available() > 0) {
+    char data = Serial2.read();
+    buffer[index] = data;
+    ++index;
+    if (index >= 100) {
+      index = 0;
+      Serial.println("Too many");
+      Serial.println(buffer);
+      buffer[100] = '\0';
+    }
+    if (data == '*') {
+      // Read 4 more, 2 checksum bytes + \r + \n
+      for (int i = 0; i < 4; ++i) {
+        data = blockingReadFromGps();
+        buffer[index] = data;
+        if (data != '\r' && data != '\n') {
+          ++index;
+        }
+      }
+      buffer[index] = '\0';
+      Serial.println(buffer);
+      index = 0;
     }
   }
-  Serial.println(Serial2.available());
-  while (Serial2.available() > 0) {
-    Serial.print(static_cast<char>(Serial2.read()));
+
+  // Huh, looks like this isn't necessary anymore? Whatever I changed with the read into a buffer
+  // above seems to have fixed it. I'll leave this though, just in case.
+  if (strncmp(buffer, "$GPTXT", 6) == 0) {
+    resetGps();
+    index = 0;
+    buffer[0] = '\0';
+    for (int i = 0; i < 10; ++i) {
+      Serial.println("******* Resetting ********");
+    }
   }
-  Serial2.println();
 
   delay(500);
 }
