@@ -89,9 +89,15 @@ Position PositionEstimator::get() {
   pos.longitude_d = gps.location.lng();
   pos.altitude_m = gps.altitude.meters();
   pos.valid = gps.location.isValid();
-  pos.pitch_d = pitch_d;
-  pos.roll_d = roll_d;
-  pos.yaw_d = yaw_d;
+  const float declinationDenver_d = 7.56f;
+  // I mounted this rotated, so we need to adjust
+  pos.pitch_d = -roll_d;
+  pos.roll_d = -pitch_d;
+  // I don't know if we need to add or subtract this declination
+  pos.yaw_d = -yaw_d + 90.0f + 360.0f + declinationDenver_d;
+  while (pos.yaw_d >= 360.0f) {
+    pos.yaw_d -= 360.0f;
+  }
   return pos; 
 }
 
