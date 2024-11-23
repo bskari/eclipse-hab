@@ -89,6 +89,7 @@ Position PositionEstimator::get() {
   pos.longitude_d = gps.location.lng();
   pos.altitude_m = gps.altitude.meters();
   pos.valid = gps.location.isValid();
+  pos.updated = gps.location.isUpdated();
   const float declinationDenver_d = 7.56f;
   // I mounted this rotated, so we need to adjust
   pos.pitch_d = -roll_d;

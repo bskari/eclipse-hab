@@ -9,6 +9,7 @@ struct Position {
   float longitude_d;
   float altitude_m;
   bool valid;
+  bool updated;
   float pitch_d;
   float roll_d;
   float yaw_d;
