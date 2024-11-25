@@ -1,0 +1,16 @@
+{
+    "folders": [
+        {
+            "path": "./"
+        },
+        {
+            "path": "../sketches"
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "cmath": "cpp",
+            "limits": "cpp"
+        }
+    }
+}
