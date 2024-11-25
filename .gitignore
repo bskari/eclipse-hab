@@ -12,6 +12,7 @@ rtl-sdr/*.log
 rtl-sdr/aprslib
 rtl-sdr/aprs.kml
 rtl-sdr/messages.csv
+*kicad*.lck
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
