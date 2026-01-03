@@ -12,6 +12,8 @@ rtl-sdr/*.log
 rtl-sdr/aprslib
 rtl-sdr/aprs.kml
 rtl-sdr/messages.csv
+glider/board/gerber
+glider/board/glider-backups
 *kicad*.lck
 
 # Byte-compiled / optimized / DLL files
